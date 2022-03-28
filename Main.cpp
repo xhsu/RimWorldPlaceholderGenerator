@@ -2,23 +2,22 @@
 //
 
 #include <iostream>
+#include <filesystem>
+#include <chrono>
 
 #include "tinyxml2/tinyxml2.h"
 
 import Mod;
+import UtlWinConsole;
 
-int main(int argc, char** argv)
+namespace fs = std::filesystem;
+
+int main(int argc, char** argv) noexcept
 {
-	tinyxml2::XMLDocument ret;
-	ret.SetBOM(true);
-	ret.InsertFirstChild(ret.NewDeclaration());
-
 	std::ios_base::sync_with_stdio(false);
-	//GetTranslatableEntriesOfMod("Test/1.3");
-	GetDummyLocalizationOfFile("Test\\1.3\\Defs\\InteractionDef\\Interactions_Dialogue.xml", &ret);
-	//auto rg = GetTranslatableEntriesOfFile("Test\\1.3\\Defs\\InteractionDef\\Interactions_Dialogue.xml");
+	GenerateDummyForMod("Test/1.3", "ChineseSimplified");
 
-	ret.SaveFile("ret.xml");
+	cout_w();
 	return EXIT_SUCCESS;
 }
 

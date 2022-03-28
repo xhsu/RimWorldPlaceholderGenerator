@@ -24,6 +24,12 @@
     <ClCompile Include="Mod.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Hydrogenium\UtlWinConsole.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Hydrogenium\UtlConcepts.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="tinyxml2\tinyxml2.h">
