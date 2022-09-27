@@ -1,24 +1,19 @@
 // RimWorldPlaceholderGenerator.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
-#include <iostream>
+#include <compare>
 #include <filesystem>
-#include <chrono>
-
-#include "tinyxml2/tinyxml2.h"
 
 import Mod;
-import UtlWinConsole;
 
-namespace fs = std::filesystem;
 
-int main(int argc, char** argv) noexcept
+int main(int argc, char *argv[]) noexcept
 {
-	std::ios_base::sync_with_stdio(false);
 	GenerateDummyForMod("Test/1.3", "ChineseSimplified");
 
-	cout_w();
-	return EXIT_SUCCESS;
+	GetOriginalTextsOfMod("Test/1.3");
+
+	return 0;
 }
 
 // Run program: Ctrl + F5 or Debug > Start Without Debugging menu
