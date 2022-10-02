@@ -1,6 +1,6 @@
 module;
 
-#define USING_MULTITHREAD
+//#define USING_MULTITHREAD
 
 #include <assert.h>
 #include <time.h>
@@ -11,6 +11,7 @@ module;
 #include <filesystem>
 #include <functional>
 #include <list>
+#include <ranges>
 #include <string>
 #include <unordered_map>
 
@@ -21,6 +22,10 @@ module;
 
 #include "tinyxml2/tinyxml2.h"
 #include <fmt/color.h>
+#include <range/v3/range.hpp>
+#include <range/v3/view.hpp>
+#include <range/v3/algorithm.hpp>
+#include <cppcoro/recursive_generator.hpp>
 
 
 export module Mod;
@@ -45,6 +50,8 @@ using std::string;
 using std::unordered_map;
 using std::function;
 
+using cppcoro::recursive_generator;
+
 struct Cell_t
 {
 	string m_szEntry{ "NULL ENTRY" };
@@ -55,43 +62,130 @@ struct Cell_t
 using EntryList_t = list<string>;
 using Localization_t = pair<string, string>;
 
-enum TranslationCell_e : size_t
-{
-	CELL_ENTRY = 0u,
-	CELL_ORIGINAL_TEXT,
-	CELL_LOCALIZED_TEXT,
-};
-
 inline constexpr array g_rgszNodeShouldLocalise =
 {
+	"adjective"sv,
+	"approachOrderString"sv,
+	"approachingReportString"sv,
+	"arrivalTextEnemy"sv,
+	"arrivalTextFriendly"sv,
+	"arrivedLetter"sv,
+	"arrivedLetterLabelPart"sv,
+	"baseInspectLine"sv,
+	"battleStateLabel"sv,
 	"beginLetter"sv,
 	"beginLetterLabel"sv,
+	"calledOffMessage"sv,
+	"categoryLabel"sv,
+	"chargeNoun"sv,
+	"confirmationDialogText"sv,
+	"countdownLabel"sv,
+	"customLabel"sv,
+	"customSummary"sv,
+	"deathMessage"sv,
+	"desc"sv,
+	"descOverride"sv,
 	"description"sv,
+	"descriptionFuture"sv,
+	"discoveredLetterText"sv,
+	"discoveredLetterTitle"sv,
+	"effectDesc"sv,
+	"endMessage"sv,
+	"eventLabel"sv,
+	"expectedThingLabelTip"sv,
+	"extraTextPawnDeathLetter"sv,
+	"extraTooltip"sv,
+	"failMessage"sv,
+	"finishedMessage"sv,
 	"fixedName"sv,
+	"formatString"sv,
+	"formatStringUnfinalized"sv,
 	"gerund"sv,
 	"gerundLabel"sv,
+	"graphLabelY"sv,
+	"groupLabel"sv,
+	"headerTip"sv,
 	"helpText"sv,
+	"helpTextController"sv,
+	"ideoName"sv,
 	"ingestCommandString"sv,
 	"ingestReportString"sv,
-	"inspectLine"sv,
+	"ingestReportStringEat"sv,
+	"inspectStringLabel"sv,
+	"instantlyPermanentLabel"sv,
 	"jobString"sv,
 	"label"sv,
+	"labelAbstract"sv,
+	"labelAnimals"sv,
+	"labelFemale"sv,
+	"labelFemalePlural"sv,
+	"labelMale"sv,
+	"labelMalePlural"sv,
+	"labelMechanoids"sv,
+	"labelNoun"sv,
+	"labelNounPretty"sv,
+	"labelOverride"sv,
+	"labelPlural"sv,
 	"labelShort"sv,
+	"labelSocial"sv,
+	"letterInfoText"sv,
 	"letterLabel"sv,
+	"letterLabelEnemy"sv,
+	"letterLabelFriendly"sv,
 	"letterText"sv,
+	"letterTitle"sv,
+	"meatLabel"sv,
+	"member"sv,
+	"message"sv,
+	"missingDesc"sv,
+	"name"sv,
+	"noCandidatesGizmoDesc"sv,
+	"offMessage"sv,
+	"onMapInstruction"sv,
+	"output"sv,
+	"overrideLabel"sv,
+	"overrideTooltip"sv,
 	"pawnLabel"sv,
+	"pawnSingular"sv,
 	"pawnsPlural"sv,
+	"permanentLabel"sv,
+	"potentialExtraOutcomeDesc"sv,
 	"recoveryMessage"sv,
+	"rejectInputMessage"sv,
+	"removeRecipeLabelOverride"sv,
 	"reportString"sv,
+	"ritualExpectedDesc"sv,
+	"ritualExplanation"sv,
+	"royalFavorLabel"sv,
+	"shortDescOverride"sv,
 	"skillLabel"sv,
+	"spectatorGerund"sv,
+	"spectatorsLabel"sv,
+	"successMessage"sv,
+	"successMessageNoNegativeThought"sv,
+	"successfullyRemovedHediffMessage"sv,
+	"summary"sv,
+	"targetPrefix"sv,
 	"text"sv,
+	"textController"sv,
+	"textEnemy"sv,
+	"textFriendly"sv,
+	"textWillArrive"sv,
+	"theme"sv,
+	"tipLabelOverride"sv,
+	"type"sv,
 	"useLabel"sv,
 	"verb"sv,
+	"worshipRoomLabel"sv,
 };
 
 inline constexpr array g_rgszNodeShouldLocaliseAsArray =
 {
 	"rulesStrings"sv,
+	"extraInfoLines"sv,
+	"extraPredictedOutcomeDescriptions"sv,
+	"rulesStrings"sv,
+	"thoughtStageDescriptions"sv,
 };
 
 export [[nodiscard]]
@@ -109,31 +203,39 @@ list<string> ListModFolder(const fs::path& hModFolder) noexcept
 	return ret;
 }
 
-void fnRecursive(const function<void(const string& /*Entry name*/, const char* /*Original Text*/)>& fnCallback, const string& szAccumulatedName, XMLElement* elem) noexcept
+recursive_generator<Localization_t> ExtractTranslationKeyValues(const string &szAccumulatedName, XMLElement *elem) noexcept	// #UPDATE_AT_CPP23 std::generator. It can do recrusive thing according to standard.
 {
 	if (elem->FirstChildElement())
 	{
 		for (auto i = elem->FirstChildElement(); i; i = i->NextSiblingElement())
 		{
-			if (std::find(std::begin(g_rgszNodeShouldLocalise), std::end(g_rgszNodeShouldLocalise), i->Value()) != std::end(g_rgszNodeShouldLocalise))
-				fnCallback(szAccumulatedName + "."s + i->Value(), i->GetText());
-			else if (std::find(std::begin(g_rgszNodeShouldLocaliseAsArray), std::end(g_rgszNodeShouldLocaliseAsArray), i->Value()) != std::end(g_rgszNodeShouldLocaliseAsArray))
+			// Case 1: this is a key we should translate!
+			if (::ranges::contains(g_rgszNodeShouldLocalise, i->Value()))	// #UPDATE_AT_CPP23
+				co_yield{ szAccumulatedName + "."s + i->Value(), i->GetText() };
+
+			// Case 2: this is an array of strings!
+			else if (::ranges::contains(g_rgszNodeShouldLocaliseAsArray, i->Value()))
 			{
 				unsigned index = 0;
 				auto szAccumulatedName2 = szAccumulatedName + "."s + i->Value() + "."s;
-				for (auto li = i->FirstChildElement("li"); li; li = li->NextSiblingElement("li"), ++index)
-					fnCallback(szAccumulatedName2 + std::to_string(index), li->GetText());
+
+				for (auto li = i->FirstChildElement("li"); li; li = li->NextSiblingElement("li"), ++index)	// Thank God that it contains no 2-dimension string array.
+					co_yield{ szAccumulatedName2 + std::to_string(index), li->GetText() };
 			}
+
+			// Case 3: this is an array of object!
 			else if (i->FirstChildElement("li"))
 			{
 				unsigned index = 0;
 				for (auto li = i->FirstChildElement("li"); li; li = li->NextSiblingElement("li"), ++index)
 					li->SetValue(std::to_string(index).c_str());
 
-				fnRecursive(fnCallback, szAccumulatedName + "."s + i->Value(), i);
+				co_yield ExtractTranslationKeyValues(szAccumulatedName + "."s + i->Value(), i);
 			}
-			else
-				fnRecursive(fnCallback, szAccumulatedName + "."s + i->Value(), i);
+
+			// Default: To be honest, I don't think we could ever get here.
+			else [[unlikely]]
+				co_yield ExtractTranslationKeyValues(szAccumulatedName + "."s + i->Value(), i);
 		}
 	}
 }
@@ -146,31 +248,34 @@ list<string> GetLocalizableEntriesOfFile(const fs::path& hXML) noexcept
 
 	list<string> rgszEntries{};
 	auto Defs = doc.FirstChildElement("Defs");
-	const auto fn = [&rgszEntries](const string& szEntry, const char* pszOriginalText) { rgszEntries.emplace_back(szEntry); };
 
 	for (auto i = Defs->FirstChildElement(); i; i = i->NextSiblingElement())
 	{
 		if (auto defName = i->FirstChildElement("defName"); defName)
-			fnRecursive(fn, defName->GetText(), i);
+		{
+			for (auto &&sz : ExtractTranslationKeyValues(defName->GetText(), i) | std::views::keys)	// #UPDATE_AT_CPP23	::ranges::to<list> won't work here. FVCK.
+				rgszEntries.emplace_back(std::move(sz));
+
+			//rgszEntries.splice(rgszEntries.end(), fnRecursiveLoading(defName->GetText(), i) | std::views::keys | ::ranges::to<list>);
+		}
 	}
 
 	return rgszEntries;
 }
 
 [[nodiscard]]
-list<Localization_t> GetOriginalTextsOfFile(const fs::path& hXML) noexcept
+auto GetOriginalTextsOfFile(const fs::path& hXML) noexcept
 {
 	XMLDocument doc;
 	doc.LoadFile(hXML.string().c_str());
 
 	list<Localization_t> rgsz{};
 	auto Defs = doc.FirstChildElement("Defs");
-	const auto fn = [&rgsz](const string& szEntry, const char* pszOriginalText) { rgsz.emplace_back(szEntry, pszOriginalText); };
 
 	for (auto i = Defs->FirstChildElement(); i; i = i->NextSiblingElement())
 	{
 		if (auto defName = i->FirstChildElement("defName"); defName)
-			fnRecursive(fn, defName->GetText(), i);
+			rgsz.splice(rgsz.end(), ExtractTranslationKeyValues(defName->GetText(), i) | ::ranges::to<list>);
 	}
 
 	return rgsz;
@@ -189,6 +294,9 @@ void GenerateDummyForFile(const fs::path& hXMLSource, const fs::path& hXMLDest, 
 			else
 				++iter;
 		}
+
+		// #TODO change it to yield + take.
+		std::ranges::remove_if(rgsz, [&rgszExistedEntries](Localization_t const &Pair) { return ::ranges::contains(rgszExistedEntries, Pair.first); });
 	}
 
 	if (rgsz.empty())
@@ -426,12 +534,12 @@ unordered_map<fs::path, Cell_t> GetTranslationCellOfMod(const fs::path& hModFold
 		doc.LoadFile(hEntry.path().string().c_str());
 
 		auto Defs = doc.FirstChildElement("Defs");
-		const auto fn = [&Cells, &hEntry](const string& szEntry, const char* pszOriginalText) { Cells[hEntry.path()].m_szEntry = szEntry; Cells[hEntry.path()].m_szOriginalText = pszOriginalText; };
 
 		for (auto i = Defs->FirstChildElement(); i; i = i->NextSiblingElement())
 		{
 			if (auto defName = i->FirstChildElement("defName"); defName)
-				fnRecursive(fn, defName->GetText(), i);
+				for (auto &&[szEntry, szOriginalText] : ExtractTranslationKeyValues(defName->GetText(), i))
+					Cells[hEntry.path()] = Cell_t{ .m_szEntry = std::move(szEntry), .m_szOriginalText = std::move(szOriginalText) };
 		}
 	}
 
