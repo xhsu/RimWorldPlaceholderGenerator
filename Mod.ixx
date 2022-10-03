@@ -281,7 +281,7 @@ void GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOther
 
 	if (rgsz.empty())
 	{
-		fmt::print(fg(fmt::color::gray), "Skipping: {}\n", hXmlOtherLang.string());
+		fmt::print(fg(fmt::color::gray), "Skipping: {}\n", hXmlEnglish.string());
 		return;
 	}
 
