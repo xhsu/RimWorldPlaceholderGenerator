@@ -220,7 +220,7 @@ recursive_generator<Localization_t> ExtractTranslationKeyValues(const string &sz
 
 			// Case 1: this is a key we should translate!
 			if (::ranges::contains(g_rgszNodeShouldLocalise, szIdentifier))	// #UPDATE_AT_CPP23
-				co_yield{ szNextAccumulatedName, i->GetText() };
+				co_yield{ szNextAccumulatedName, i->GetText() ? i->GetText() : ""s };
 
 			// Case 2: this is an array of strings!
 			else if (::ranges::contains(g_rgszNodeShouldLocaliseAsArray, szIdentifier))
@@ -228,7 +228,7 @@ recursive_generator<Localization_t> ExtractTranslationKeyValues(const string &sz
 				unsigned index = 0;
 
 				for (auto li = i->FirstChildElement("li"); li; li = li->NextSiblingElement("li"), ++index)	// Thank God that it contains no 2-dimension string array.
-					co_yield{ szNextAccumulatedName + '.' + std::to_string(index), li->GetText()};
+					co_yield{ szNextAccumulatedName + '.' + std::to_string(index), li->GetText() ? li->GetText() : ""s };
 			}
 
 			// Case 3: this is an array of objects!
@@ -260,7 +260,8 @@ recursive_generator<Localization_t> ExtractTranslationKeyValues(const fs::path& 
 	{
 		if (Defs = doc.FirstChildElement("LanguageData"); Defs)
 			for (auto i = Defs->FirstChildElement(); i; i = i->NextSiblingElement())
-				co_yield{ i->Value(), i->GetText() };
+				if (i->Value() && i->GetText())
+					co_yield{ i->Value(), i->GetText() };
 	}
 	else
 	{
@@ -338,7 +339,8 @@ recursive_generator<Localization_t> GetAllExistingLocOfFile(const fs::path& hXML
 	if (auto LanguageData = doc.FirstChildElement("LanguageData"); LanguageData)
 	{
 		for (auto i = LanguageData->FirstChildElement(); i; i = i->NextSiblingElement())
-			co_yield{ i->Value(), i->GetText() };
+			if (i->Value() && i->GetText())
+				co_yield{ i->Value(), i->GetText() };
 	}
 }
 
