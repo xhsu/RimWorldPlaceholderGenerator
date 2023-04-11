@@ -89,7 +89,7 @@ int main(int argc, char *argv[]) noexcept
 
 		GenerateDummyForMod(argv[1], sz);
 
-		fmt::print(fg(fmt::color::lime_green), "DONE.");
+		fmt::print(fg(fmt::color::lime_green), "\nDONE.\nPress Enter to exit.");
 		while (std::cin.get() != '\n') {}
 		return EXIT_SUCCESS;
 	}
@@ -98,12 +98,12 @@ int main(int argc, char *argv[]) noexcept
 		fmt::print(fg(fmt::color::gray), "Selected mod path: {}\n", argv[1]);
 		fmt::print(fg(fmt::color::gray), "Selected language: {}\n\n", argv[2]);
 #ifndef _DEBUG
-		std::this_thread::sleep_for(3s);
+		//std::this_thread::sleep_for(3s);
 #endif
 
 		GenerateDummyForMod(argv[1], argv[2]);
 
-		fmt::print(fg(fmt::color::lime_green), "DONE.");
+		fmt::print(fg(fmt::color::lime_green), "\nDONE.\nPress Enter to exit.");
 		while (std::cin.get() != '\n') {}
 		return EXIT_SUCCESS;
 

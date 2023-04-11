@@ -24,7 +24,6 @@ module;
 #include "tinyxml2/tinyxml2.h"
 #include <fmt/color.h>
 #include <fmt/chrono.h>
-#include <range/v3/all.hpp>
 #include <cppcoro/recursive_generator.hpp>
 
 
@@ -219,11 +218,11 @@ recursive_generator<Localization_t> ExtractTranslationKeyValues(const string &sz
 					) + */i->Value();
 
 			// Case 1: this is a key we should translate!
-			if (::ranges::contains(g_rgszNodeShouldLocalise, szIdentifier))	// #UPDATE_AT_CPP23
+			if (std::ranges::contains(g_rgszNodeShouldLocalise, szIdentifier))
 				co_yield{ szNextAccumulatedName, i->GetText() ? i->GetText() : ""s };
 
 			// Case 2: this is an array of strings!
-			else if (::ranges::contains(g_rgszNodeShouldLocaliseAsArray, szIdentifier))
+			else if (std::ranges::contains(g_rgszNodeShouldLocaliseAsArray, szIdentifier))
 			{
 				unsigned index = 0;
 
@@ -273,11 +272,10 @@ recursive_generator<Localization_t> ExtractTranslationKeyValues(const fs::path& 
 
 void GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOtherLang, const deque<string>& rgszExistedEntries = {}) noexcept
 {
-	auto const rgsz = ExtractTranslationKeyValues(hXmlEnglish)
-		| ::ranges::to<deque>
-		| std::views::filter([&](Localization_t const &Pair) { return !::ranges::contains(rgszExistedEntries, Pair.first); })	// only the keys does not existed in translated file shall pass.
-		| std::views::common
-		| ::ranges::to<vector>;	// #UPDATE_AT_CPP23
+	auto const rgsz =
+		ExtractTranslationKeyValues(hXmlEnglish)
+		| std::views::filter([&](Localization_t const &Pair) { return !std::ranges::contains(rgszExistedEntries, Pair.first); })	// only the keys does not existed in translated file shall pass.
+		| std::ranges::to<vector>();
 
 	if (rgsz.empty())
 	{
@@ -406,10 +404,10 @@ export void GenerateDummyForMod(const fs::path& hModFolder, const string& szLang
 	}
 #endif
 
-	auto rgszExistingEntries = GetAllExistingLocOfMod(hModFolder, szLanguage)
-		| ::ranges::to<deque>
+	auto rgszExistingEntries =
+		GetAllExistingLocOfMod(hModFolder, szLanguage)
 		| std::views::keys
-		| ::ranges::to<deque>;	// #UPDATE_AT_CPP23
+		| std::ranges::to<deque>();	// #UPDATE_AT_CPP23
 
 	std::ranges::sort(rgszExistingEntries);
 	auto const [first, last] = std::ranges::unique(rgszExistingEntries.begin(), rgszExistingEntries.end());
@@ -437,26 +435,30 @@ export void GenerateDummyForMod(const fs::path& hModFolder, const string& szLang
 		);
 	}
 
-	// No way we can handle txts.
-	for (const auto &hEntry : fs::recursive_directory_iterator(hModFolder / "Languages" / "English" / "Keyed"))
+	if (auto const hKeyedEntry = hModFolder / "Languages" / "English" / "Keyed"; fs::exists(hKeyedEntry))
 	{
-		if (hEntry.is_directory() || !hEntry.path().has_extension())
-			continue;
+		for (const auto &hEntry : fs::recursive_directory_iterator(hKeyedEntry))
+		{
+			if (hEntry.is_directory() || !hEntry.path().has_extension())
+				continue;
 
-		if (const auto szExt = hEntry.path().extension().string(); _stricmp(szExt.c_str(), ".xml"))
-			continue;
+			if (const auto szExt = hEntry.path().extension().string(); _stricmp(szExt.c_str(), ".xml"))
+				continue;
 
 #ifdef USING_MULTITHREAD
-		rgThreads.emplace_back(
-			GenerateDummyForFile,
+			rgThreads.emplace_back(
+				GenerateDummyForFile,
 #else
-		GenerateDummyForFile(
+			GenerateDummyForFile(
 #endif // USING_MULTITHREAD
-			hEntry.path(),
-			hModFolder / "Languages" / szLanguage / "Keyed" / fs::relative(hEntry.path(), hModFolder / "Languages" / "English" / "Keyed"),
-			rgszExistingEntries
-		);
+				hEntry.path(),
+				hModFolder / "Languages" / szLanguage / "Keyed" / fs::relative(hEntry.path(), hKeyedEntry),
+				rgszExistingEntries
+			);
+		}
 	}
+
+	// Skip the txt files, nothing we can do to help.
 }
 
 // The path will be the path in Defs instead of InjectedDefs.
