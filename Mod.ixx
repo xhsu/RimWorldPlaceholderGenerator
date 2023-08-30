@@ -24,7 +24,7 @@ module;
 #include "tinyxml2/tinyxml2.h"
 #include <fmt/color.h>
 #include <fmt/chrono.h>
-#include <cppcoro/recursive_generator.hpp>
+#include <cppcoro/recursive_generator.hpp>	// #UPDATE_AT_CPP23 generator
 
 
 export module Mod;
