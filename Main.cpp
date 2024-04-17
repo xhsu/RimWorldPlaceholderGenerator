@@ -16,7 +16,10 @@ import Style;
 
 using namespace std::literals;
 
+namespace fs = std::filesystem;
+
 using std::array;
+using std::string_view;
 
 inline constexpr array g_rgszAutoCompleteLanguages =
 {
@@ -49,8 +52,9 @@ inline constexpr array g_rgszAutoCompleteLanguages =
 	"Ukrainian"sv,
 };
 
-extern void GenerateDummyForMod(std::filesystem::path const& hModFolder, std::string_view szLanguage) noexcept;
-extern void GenerateCrcRecordForMod(std::filesystem::path const& hModFolder, std::string_view szLanguage) noexcept;
+extern void GenerateDummyForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
+extern void GenerateCrcRecordForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
+extern void InspectDuplicatedOriginalText(fs::path const& hModFolder) noexcept;
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -99,6 +103,7 @@ int main(int argc, char *argv[]) noexcept
 		fmt::print("Selected language: {}\n\n", sz);
 		std::this_thread::sleep_for(1s);
 
+		InspectDuplicatedOriginalText(argv[1]);
 		GenerateDummyForMod(argv[1], sz);
 		GenerateCrcRecordForMod(argv[1], sz);
 
@@ -115,7 +120,7 @@ int main(int argc, char *argv[]) noexcept
 #ifndef _DEBUG
 		std::this_thread::sleep_for(1s);
 #endif
-
+		InspectDuplicatedOriginalText(argv[1]);
 		GenerateDummyForMod(argv[1], argv[2]);
 		GenerateCrcRecordForMod(argv[1], argv[2]);
 

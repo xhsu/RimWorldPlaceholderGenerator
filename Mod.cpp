@@ -215,7 +215,7 @@ generator<string> ListModFolder(const fs::path& hModFolder) noexcept
 			co_yield i->GetText();
 }
 
-[[nodiscard]]
+static [[nodiscard]]
 recursive_generator<localization_t> ExtractTranslationKeyValues(const string &szAccumulatedName, XMLElement *elem) noexcept	// #UPDATE_AT_CPP23 std::generator. It can do recrusive thing according to standard.
 {
 	if (elem->FirstChildElement())
@@ -262,11 +262,12 @@ recursive_generator<localization_t> ExtractTranslationKeyValues(const string &sz
 	}
 }
 
-[[nodiscard]]
+static [[nodiscard]]
 recursive_generator<localization_t> ExtractTranslationKeyValues(const fs::path& XmlPath) noexcept	// extract from a file.
 {
 	XMLDocument doc;
-	doc.LoadFile(XmlPath.u8string().c_str());
+	if (doc.LoadFile(XmlPath.u8string().c_str()) != XML_SUCCESS)
+		co_return;
 
 	auto Defs = doc.FirstChildElement("Defs");
 	if (!Defs)	// Keyed file??
@@ -285,6 +286,7 @@ recursive_generator<localization_t> ExtractTranslationKeyValues(const fs::path& 
 	}
 }
 
+static
 EDecision GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOtherLang, sv_set_t const& rgszExistedEntries, sv_set_t* prgszDeadEntries, crc_dictionary_t const& mCRC, EDecision LastAction) noexcept
 {
 	auto const fnDirtOrNew =
@@ -412,7 +414,7 @@ EDecision GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXml
 	return decision;
 }
 
-[[nodiscard]]
+static [[nodiscard]]
 recursive_generator<localization_t> GetAllExistingLocOfFile(const fs::path& hXML) noexcept
 {
 	XMLDocument doc;
@@ -426,7 +428,7 @@ recursive_generator<localization_t> GetAllExistingLocOfFile(const fs::path& hXML
 	}
 }
 
-[[nodiscard]]
+static [[nodiscard]]
 recursive_generator<localization_t> GetAllExistingLocOfMod(const fs::path& hModFolder, string_view szLanguage) noexcept
 {
 	for (const auto& hEntry : fs::recursive_directory_iterator(hModFolder))
@@ -445,7 +447,7 @@ recursive_generator<localization_t> GetAllExistingLocOfMod(const fs::path& hModF
 	}
 }
 
-[[nodiscard]]
+static [[nodiscard]]
 recursive_generator<localization_t> GetAllOriginalTextsOfMod(const fs::path& hModFolder) noexcept
 {
 	// Handle DefInjection
@@ -722,4 +724,68 @@ void GenerateCrcRecordForMod(fs::path const& hModFolder, string_view szLanguage)
 #endif
 
 	fmt::print(Style::Action, "\nCRC checksum dictionary saved: {}\n", fmt::styled(crc_file_path, Style::Name));
+}
+
+static [[nodiscard]]
+generator<fs::path> GetAllOriginalTextFilesOfMod(fs::path const& hModFolder) noexcept
+{
+	// Handle DefInjection
+	for (auto&& hPath :
+		fs::recursive_directory_iterator(hModFolder / L"Defs")
+		| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
+		| std::views::transform(&fs::directory_entry::path)
+		| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".xml") == 0; })
+		)
+	{
+		co_yield std::remove_cvref_t<decltype(hPath)>{ hPath };	// #UPDATE_AT_CPP23 auto{x}
+	}
+
+	if (auto const hKeyedEntry = hModFolder / L"Languages" / L"English" / L"Keyed"; fs::exists(hKeyedEntry))
+	{
+		for (auto&& hPath :
+			fs::recursive_directory_iterator(hKeyedEntry)
+			| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
+			| std::views::transform(&fs::directory_entry::path)
+			| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".xml") == 0; })
+			)
+		{
+			co_yield std::remove_cvref_t<decltype(hPath)>{ hPath };
+		}
+	}
+
+	co_return;
+}
+
+EXPORT
+void InspectDuplicatedOriginalText(fs::path const& hModFolder) noexcept
+{
+	std::vector<fs::path> const rgszXmlFiles{ std::from_range, GetAllOriginalTextFilesOfMod(hModFolder) | std::views::as_rvalue };
+	std::map<fs::path, dictionary_t, std::less<>> mXml{};
+
+	for (auto&& hPath : rgszXmlFiles)
+	{
+		mXml.try_emplace(
+			std::remove_cvref_t<decltype(hPath)>{ hPath },	// #UPDATE_AT_CPP23 auto{x}
+			std::from_range, ExtractTranslationKeyValues(hPath) | std::views::as_rvalue	// because of the eval order, we cannot actually move the value in vector in.
+		);
+	}
+
+	for (auto it = mXml.cbegin(); it != mXml.cend(); ++it)
+	{
+		auto&& [XmlPath, mLoc] = *it;
+
+		for (auto&& key : mLoc | std::views::keys)
+		{
+			for (auto it2 = it; it2 != mXml.cend(); ++it2)
+			{
+				auto&& [XmlPath2, mLoc2] = *it2;
+
+				if (XmlPath == XmlPath2) [[unlikely]]	// String cmp!!
+					continue;
+
+				if (mLoc2.contains(key))
+					fmt::print(Style::Warning, "Key '{}' duplicated in '{}' and in '{}'\n", key, fs::relative(XmlPath, hModFolder).u8string(), fs::relative(XmlPath2, hModFolder).u8string());
+			}
+		}
+	}
 }
