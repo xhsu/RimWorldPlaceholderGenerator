@@ -176,7 +176,7 @@
     <ClCompile Include="Application.ixx" />
     <ClCompile Include="CRC64.ixx" />
     <ClCompile Include="Main.cpp" />
-    <ClCompile Include="Mod.ixx" />
+    <ClCompile Include="Mod.cpp" />
     <ClCompile Include="Style.ixx" />
     <ClCompile Include="tinyxml2\tinyxml2.cpp" />
   </ItemGroup>

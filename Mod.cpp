@@ -1,22 +1,13 @@
-module;
-
 //#define USING_MULTITHREAD
-
-#include <assert.h>
-#include <time.h>
 
 #include <array>
 #include <chrono>
-#include <compare>
 #include <filesystem>
-#include <functional>
 #include <map>
 #include <ranges>
 #include <set>
 #include <span>
-#include <string>
 #include <unordered_map>
-#include <vector>
 
 #ifdef USING_MULTITHREAD
 #include <future>
@@ -28,17 +19,12 @@ module;
 #include <fmt/chrono.h>
 #include <cppcoro/recursive_generator.hpp>	// #UPDATE_AT_CPP23 generator
 
-
-export module Mod;
-
 import Application;
 import CRC64;
 import Style;
 
-
 using namespace tinyxml2;
-using namespace std::string_literals;
-using namespace std::string_view_literals;
+using namespace std::literals;
 
 namespace fs = std::filesystem;
 namespace ch = std::chrono;
@@ -59,13 +45,6 @@ using std::vector;
 using cppcoro::recursive_generator;
 using cppcoro::generator;
 
-struct cell_t
-{
-	string m_szEntry{ "NULL ENTRY" };
-	string m_szOriginalText{ "NO ORIGINAL TEXT" };
-	string m_szLocalizedText{ "NO LOCALIZED TEXT" };
-};
-
 struct sv_less_t final
 {
 	using is_transparent = int;
@@ -79,8 +58,10 @@ struct sv_less_t final
 
 using localization_t = pair<string, string>;
 using string_set_t = std::set<string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_set
+using sv_set_t = std::set<string_view, std::less<>>;
 using crc_dictionary_t = std::unordered_map<string, uint64_t, std::hash<string_view>, std::equal_to<string_view>>;
-using new_translation_t = std::map<string, string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_map
+using dictionary_t = std::map<string, string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_map
+using dict_view_t = std::map<string_view, string_view, std::less<>>;
 
 inline constexpr array g_rgszNodeShouldLocalise =
 {
@@ -208,7 +189,21 @@ inline constexpr array g_rgszNodeShouldLocaliseAsArray =
 	"thoughtStageDescriptions"sv,
 };
 
-export [[nodiscard]]
+enum struct EDecision
+{
+	Error,
+	NoOp,
+	Skipped,
+	Patched,
+	Created,
+};
+
+#ifdef EXPORT
+#undef EXPORT
+#endif
+#define EXPORT
+
+EXPORT [[nodiscard]]
 generator<string> ListModFolder(const fs::path& hModFolder) noexcept
 {
 	XMLDocument doc;
@@ -268,10 +263,10 @@ recursive_generator<localization_t> ExtractTranslationKeyValues(const string &sz
 }
 
 [[nodiscard]]
-recursive_generator<localization_t> ExtractTranslationKeyValues(const fs::path& hXML) noexcept	// extract from a file.
+recursive_generator<localization_t> ExtractTranslationKeyValues(const fs::path& XmlPath) noexcept	// extract from a file.
 {
 	XMLDocument doc;
-	doc.LoadFile(hXML.u8string().c_str());
+	doc.LoadFile(XmlPath.u8string().c_str());
 
 	auto Defs = doc.FirstChildElement("Defs");
 	if (!Defs)	// Keyed file??
@@ -290,7 +285,7 @@ recursive_generator<localization_t> ExtractTranslationKeyValues(const fs::path& 
 	}
 }
 
-void GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOtherLang, string_set_t const& rgszExistedEntries, crc_dictionary_t const& mCRC) noexcept
+EDecision GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOtherLang, sv_set_t const& rgszExistedEntries, sv_set_t* prgszDeadEntries, crc_dictionary_t const& mCRC, EDecision LastAction) noexcept
 {
 	auto const fnDirtOrNew =
 		[&](localization_t const& kv) noexcept -> bool
@@ -306,57 +301,89 @@ void GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOther
 			return false;
 		};
 
-	new_translation_t mEntriesToInsert{};
-	for (auto&& [entry, str] : ExtractTranslationKeyValues(hXmlEnglish) | std::views::filter(fnDirtOrNew))
+	/*
+	
+	1. Anything to add into file?
+	2. Anything to remove from file?
+	
+	*/
+
+	bool const bXmlOtherLangExists = fs::exists(hXmlOtherLang);
+	dictionary_t const mAllEntriesInFile{ std::from_range, ExtractTranslationKeyValues(hXmlEnglish) | std::views::as_rvalue };
+	dict_view_t const mEntriesToInsert{ std::from_range, mAllEntriesInFile | std::views::filter(fnDirtOrNew) };
+
+	if (mEntriesToInsert.empty() && (prgszDeadEntries->empty() || !bXmlOtherLangExists))
 	{
-		// #UPDATE_AT_CPP26 discard var '_'
-		auto const&& [iter, bIsNew] = mEntriesToInsert.try_emplace(std::move(entry), std::move(str));
-		assert(bIsNew);
+	LAB_SKIP:;
+		fmt::print(Style::Skipping, "{1}Skipping: {0}\n", hXmlEnglish.u8string(), LastAction == EDecision::Skipped ? "" : "\n");
+		return EDecision::Skipped;
 	}
 
-	if (mEntriesToInsert.empty())
-	{
-		fmt::print(Style::Skipping, "Skipping: {}\n", hXmlEnglish.u8string());
-		return;
-	}
-
+	EDecision decision = EDecision::NoOp;
 	XMLDocument dest;
 	XMLElement* LanguageData = nullptr;
 
-	if (fs::exists(hXmlOtherLang))
+	if (bXmlOtherLangExists)
 	{
 		if (auto const err = dest.LoadFile(hXmlOtherLang.u8string().c_str()); err != XMLError::XML_SUCCESS)
 		{
 			fmt::print(Style::Error, "{0}: {1}\n", XMLDocument::ErrorIDToName(err), hXmlOtherLang.u8string());
-			return;
+			return EDecision::Error;
 		}
 
 		LanguageData = dest.FirstChildElement("LanguageData");
 		dest.SetBOM(true);
 
-		// Mark today for reconition.
-		LanguageData->InsertNewComment(
-			fmt::format("Auto generated: {:%Y-%m-%d %H:%M:%S}", ch::system_clock::now()).c_str()
-		);
-
-		fmt::print(Style::Action, "\nPatching file: {}\n", fmt::styled(hXmlOtherLang.u8string(), Style::Name));
-
-		// Removing dirt entry in original file.
-
-		vector<XMLElement*> rgpToDelete{};
-		rgpToDelete.reserve(mEntriesToInsert.size());
+		// There are two types of entries to delete:
+		// 1. dead data
+		// 2. dirty data
+		vector<string> rgszLog{};
+		vector<XMLElement*> PendingDeletion{};
+		PendingDeletion.reserve(mEntriesToInsert.size());
 
 		for (auto i = LanguageData->FirstChildElement(); i != nullptr; i = i->NextSiblingElement())
 		{
-			if (string_view const szName{ i->Name() }; mEntriesToInsert.contains(szName))
+			string_view const szName{ i->Name() };
+
+			// Find and delete dirty entry (entries which changed since last mod update.)
+
+			if (mEntriesToInsert.contains(szName))
 			{
-				rgpToDelete.emplace_back(i);
-				fmt::print("Deleting dirt entry \"{}\"\n", szName);
+				PendingDeletion.emplace_back(i);
+				rgszLog.emplace_back(fmt::format("Deleting dirt entry \"{}\"\n", szName));
+			}
+
+			// find and delete noxref entries.
+
+			if (prgszDeadEntries->contains(szName))
+			{
+				prgszDeadEntries->erase(szName);
+				PendingDeletion.emplace_back(i);
+				rgszLog.emplace_back(fmt::format("Deleting dead entry: \"{}\"\n", szName));
 			}
 		}
 
-		std::ranges::for_each(rgpToDelete, std::bind_front(&XMLElement::DeleteChild, LanguageData));
-		rgpToDelete.clear();
+		// Nothing to delete? Skip.
+		if (PendingDeletion.empty() && mEntriesToInsert.empty())
+		{
+			goto LAB_SKIP;
+		}
+
+		// Mark today for reconition.
+		LanguageData->InsertNewComment(
+			fmt::format("Generated at: {:%Y-%m-%d}", ch::system_clock::now()).c_str()
+		);
+
+		fmt::print(Style::Action, "\nPatching file: {}\n", fmt::styled(hXmlOtherLang.u8string(), Style::Name));
+		decision = EDecision::Patched;
+
+		// Removing dirt entry in original file.
+		std::ranges::for_each(PendingDeletion, std::bind_front(&XMLElement::DeleteChild, LanguageData));
+		PendingDeletion.clear();
+
+		// Makes sure the file operation happens after main log.
+		for (auto&& szLog : rgszLog)
+			fmt::print(Style::Info, "{}", szLog);
 	}
 	else
 	{
@@ -366,11 +393,12 @@ void GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOther
 		dest.SetBOM(true);
 
 		fmt::print(Style::Action, "\nCreating file: {}\n", fmt::styled(hXmlOtherLang.u8string(), Style::Name));
+		decision = EDecision::Created;
 	}
 
 	for (const auto& [szEntry, szText] : mEntriesToInsert)
 	{
-		LanguageData->InsertNewChildElement(szEntry.c_str())->InsertNewText(szText.c_str());
+		LanguageData->InsertNewChildElement(szEntry.data())->InsertNewText(szText.data());
 		fmt::print("Inserting entry \"{}\"\n", szEntry);
 	}
 
@@ -381,7 +409,7 @@ void GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOther
 	assert(dest.SaveFile((hXmlOtherLang.parent_path().u8string() + '\\' + hXmlOtherLang.stem().u8string() + "_RWPHG_DEBUG.xml").c_str()) == XML_SUCCESS);
 #endif
 
-	fmt::print("\n");
+	return decision;
 }
 
 [[nodiscard]]
@@ -417,7 +445,7 @@ recursive_generator<localization_t> GetAllExistingLocOfMod(const fs::path& hModF
 	}
 }
 
-export [[nodiscard]]
+[[nodiscard]]
 recursive_generator<localization_t> GetAllOriginalTextsOfMod(const fs::path& hModFolder) noexcept
 {
 	// Handle DefInjection
@@ -447,7 +475,7 @@ recursive_generator<localization_t> GetAllOriginalTextsOfMod(const fs::path& hMo
 	co_return;
 }
 
-export
+EXPORT
 void GenerateDummyForMod(const fs::path& hModFolder, string_view szLanguage) noexcept
 {
 #ifdef USING_MULTITHREAD
@@ -506,10 +534,11 @@ void GenerateDummyForMod(const fs::path& hModFolder, string_view szLanguage) noe
 		fmt::print(Style::Warning, "' no found.\nSkipping dirt check.\n\n");
 	}
 
-	string_set_t rgszExistingEntries{};
-	for (auto&& entry : GetAllExistingLocOfMod(hModFolder, szLanguage) | std::views::keys)
-		rgszExistingEntries.emplace(std::move(entry));
-
+	dictionary_t const mOriginalTexts{ std::from_range, GetAllOriginalTextsOfMod(hModFolder) | std::views::as_rvalue };
+	dictionary_t const mAllExistingLoc{ std::from_range, GetAllExistingLocOfMod(hModFolder, szLanguage) | std::views::as_rvalue };
+	sv_set_t const rgszExistingEntries{ std::from_range, mAllExistingLoc | std::views::keys };
+	sv_set_t rgszDeadEntries{ std::from_range, mAllExistingLoc | std::views::keys | std::views::filter([&](string_view key) noexcept { return !mOriginalTexts.contains(key); }) };
+	EDecision LastAction = EDecision::NoOp;
 
 	// Handle DefInjection
 	for (auto&& hPath :
@@ -523,13 +552,15 @@ void GenerateDummyForMod(const fs::path& hModFolder, string_view szLanguage) noe
 		rgThreads.emplace_back(
 			GenerateDummyForFile,
 #else
-		GenerateDummyForFile(
+		LastAction = GenerateDummyForFile(
 #endif // USING_MULTITHREAD
 
 			hPath,
 			hModFolder / L"Languages" / szLanguage / L"DefInjected" / fs::relative(hPath, hModFolder / L"Defs"),
 			rgszExistingEntries,
-			mCRC
+			&rgszDeadEntries,
+			mCRC,
+			LastAction
 		);
 	}
 
@@ -546,17 +577,22 @@ void GenerateDummyForMod(const fs::path& hModFolder, string_view szLanguage) noe
 			rgThreads.emplace_back(
 				GenerateDummyForFile,
 #else
-			GenerateDummyForFile(
+			LastAction = GenerateDummyForFile(
 #endif // USING_MULTITHREAD
+
 				hPath,
 				hModFolder / L"Languages" / szLanguage / L"Keyed" / fs::relative(hPath, hKeyedEntry),
 				rgszExistingEntries,
-				mCRC
+				&rgszDeadEntries,
+				mCRC,
+				LastAction
 			);
 		}
 	}
 
 	// We can't do much about the filler txt file. As they are not mapping one-on-one.
+
+	fmt::println("");
 
 	if (auto const szStringFillerFolder = hModFolder / L"Languages" / L"English" / L"Strings";
 		fs::exists(szStringFillerFolder) && fs::is_directory(szStringFillerFolder)
@@ -608,9 +644,19 @@ void GenerateDummyForMod(const fs::path& hModFolder, string_view szLanguage) noe
 				fmt::print(Style::Error, "Unhandled exception on file: {}.\n\tbLocExists: {}, bCRCExists: {}, bDirty: {}\n", Text, bLocExists, bCRCExists, bDirty);
 		}
 	}
+
+	// Alerting about noxref translation entries.
+
+	if (!rgszDeadEntries.empty())
+	{
+		fmt::println("");
+
+		for (auto&& szKey : rgszDeadEntries)
+			fmt::print(Style::Info, "Localisation entry '{}' existed but no original text found!\n", szKey);
+	}
 }
 
-export
+EXPORT
 void GenerateCrcRecordForMod(fs::path const& hModFolder, string_view szLanguage) noexcept
 {
 	XMLDocument dest;

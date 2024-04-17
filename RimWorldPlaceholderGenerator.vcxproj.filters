@@ -21,9 +21,6 @@
     <ClCompile Include="tinyxml2\tinyxml2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Mod.ixx">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="CRC64.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -31,6 +28,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Application.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Mod.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

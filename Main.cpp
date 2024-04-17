@@ -12,7 +12,6 @@
 #include <fmt/color.h>
 
 import Application;
-import Mod;
 import Style;
 
 using namespace std::literals;
@@ -49,6 +48,9 @@ inline constexpr array g_rgszAutoCompleteLanguages =
 	"Turkish"sv,
 	"Ukrainian"sv,
 };
+
+extern void GenerateDummyForMod(std::filesystem::path const& hModFolder, std::string_view szLanguage) noexcept;
+extern void GenerateCrcRecordForMod(std::filesystem::path const& hModFolder, std::string_view szLanguage) noexcept;
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -95,7 +97,7 @@ int main(int argc, char *argv[]) noexcept
 		}
 
 		fmt::print("Selected language: {}\n\n", sz);
-		std::this_thread::sleep_for(3s);
+		std::this_thread::sleep_for(1s);
 
 		GenerateDummyForMod(argv[1], sz);
 		GenerateCrcRecordForMod(argv[1], sz);
