@@ -104,6 +104,7 @@
       <AdditionalIncludeDirectories>$(ProjectDir)..\range-v3\include\;$(ProjectDir)..\fmt\include\;$(ProjectDir)..\cppcoro\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/Zc:char8_t- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -123,6 +124,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/Zc:char8_t- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -141,6 +143,7 @@
       <AdditionalIncludeDirectories>$(ProjectDir)..\range-v3\include\;$(ProjectDir)..\fmt\include\;$(ProjectDir)..\cppcoro\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/Zc:char8_t- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -160,6 +163,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/Zc:char8_t- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -169,9 +173,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\Hydrogenium\UtlConcepts.ixx" />
+    <ClCompile Include="Application.ixx" />
+    <ClCompile Include="CRC64.ixx" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="Mod.ixx" />
+    <ClCompile Include="Style.ixx" />
     <ClCompile Include="tinyxml2\tinyxml2.cpp" />
   </ItemGroup>
   <ItemGroup>

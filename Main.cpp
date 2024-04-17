@@ -3,18 +3,19 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <compare>
 #include <filesystem>
 #include <iostream>
-#include <chrono>
+#include <thread>
 
 #include <fmt/color.h>
 
+import Application;
 import Mod;
+import Style;
 
-using namespace std::string_literals;
-using namespace std::string_view_literals;
-using namespace std::chrono_literals;
+using namespace std::literals;
 
 using std::array;
 
@@ -60,7 +61,16 @@ int main(int argc, char *argv[]) noexcept
 
 	case 2:
 	{
-		fmt::print(fg(fmt::color::gray), "Selected mod path: {}\n", argv[1]);
+		if (_stricmp(argv[1], "-version") == 0)
+		{
+			fmt::println("App version: {}", APP_VERSION.ToString());
+			fmt::println("Compile at: {}", __DATE__);
+			fmt::println("");
+
+			return EXIT_SUCCESS;
+		}
+
+		fmt::print(Style::Info, "Selected mod path: {}\n", argv[1]);
 		fmt::print("Input target language.\n");
 
 		auto sz = ""s;
@@ -88,23 +98,29 @@ int main(int argc, char *argv[]) noexcept
 		std::this_thread::sleep_for(3s);
 
 		GenerateDummyForMod(argv[1], sz);
+		GenerateCrcRecordForMod(argv[1], sz);
 
-		fmt::print(fg(fmt::color::lime_green), "\nDONE.\nPress Enter to exit.");
+#ifndef _DEBUG
+		fmt::print(Style::Positive, "\nDONE.\nPress Enter to exit.");
 		while (std::cin.get() != '\n') {}
+#endif
 		return EXIT_SUCCESS;
 	}
 
 	case 3:
-		fmt::print(fg(fmt::color::gray), "Selected mod path: {}\n", argv[1]);
-		fmt::print(fg(fmt::color::gray), "Selected language: {}\n\n", argv[2]);
+		fmt::print(Style::Info, "Selected mod path: {}\n", argv[1]);
+		fmt::print(Style::Info, "Selected language: {}\n\n", argv[2]);
 #ifndef _DEBUG
-		//std::this_thread::sleep_for(3s);
+		std::this_thread::sleep_for(1s);
 #endif
 
 		GenerateDummyForMod(argv[1], argv[2]);
+		GenerateCrcRecordForMod(argv[1], argv[2]);
 
-		fmt::print(fg(fmt::color::lime_green), "\nDONE.\nPress Enter to exit.");
+#ifndef _DEBUG
+		fmt::print(Style::Positive, "\nDONE.\nPress Enter to exit.");
 		while (std::cin.get() != '\n') {}
+#endif
 		return EXIT_SUCCESS;
 
 	default:

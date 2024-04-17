@@ -24,7 +24,13 @@
     <ClCompile Include="Mod.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\Hydrogenium\UtlConcepts.ixx">
+    <ClCompile Include="CRC64.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Style.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Application.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
