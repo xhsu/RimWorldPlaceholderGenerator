@@ -1,15 +1,8 @@
 // RimWorldPlaceholderGenerator.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
-#include <algorithm>
-#include <array>
-#include <chrono>
-#include <compare>
-#include <filesystem>
-#include <iostream>
-#include <thread>
-
-#include <fmt/color.h>
+#include "Precompiled.hpp"
+#include "CPPCLI.hpp"
 
 import Application;
 import Style;
@@ -55,6 +48,7 @@ inline constexpr array g_rgszAutoCompleteLanguages =
 extern void GenerateDummyForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
 extern void GenerateCrcRecordForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
 extern void InspectDuplicatedOriginalText(fs::path const& hModFolder) noexcept;
+extern void CShaprFunction(const char* path_to_mod);
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -76,6 +70,7 @@ int main(int argc, char *argv[]) noexcept
 			return EXIT_SUCCESS;
 		}
 
+		gModClasses = GetModClasses(argv[1]);
 		fmt::print(Style::Info, "Selected mod path: {}\n", argv[1]);
 		fmt::print("Input target language.\n");
 
@@ -115,6 +110,7 @@ int main(int argc, char *argv[]) noexcept
 	}
 
 	case 3:
+		gModClasses = GetModClasses(argv[1]);
 		fmt::print(Style::Info, "Selected mod path: {}\n", argv[1]);
 		fmt::print(Style::Info, "Selected language: {}\n\n", argv[2]);
 #ifndef _DEBUG

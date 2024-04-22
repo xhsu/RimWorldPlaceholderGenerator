@@ -33,6 +33,13 @@
 
 # Visual Studio
 .vs/*
+*.vcxproj.user
+
+# C#
+CSharpExecutable/bin/*
+CSharpSupporter/bin/*
+CSharpExecutable/obj/*
+CSharpSupporter/obj/*
 
 # 
 Test/*

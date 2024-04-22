@@ -1,23 +1,7 @@
 //#define USING_MULTITHREAD
 
-#include <array>
-#include <chrono>
-#include <filesystem>
-#include <map>
-#include <ranges>
-#include <set>
-#include <span>
-#include <unordered_map>
-
-#ifdef USING_MULTITHREAD
-#include <future>
-#include <thread>
-#endif
-
-#include "tinyxml2/tinyxml2.h"
-#include <fmt/color.h>
-#include <fmt/chrono.h>
-#include <cppcoro/recursive_generator.hpp>	// #UPDATE_AT_CPP23 generator
+#include "Precompiled.hpp"
+#include "CPPCLI.hpp"
 
 import Application;
 import CRC64;
@@ -45,21 +29,10 @@ using std::vector;
 using cppcoro::recursive_generator;
 using cppcoro::generator;
 
-struct sv_less_t final
-{
-	using is_transparent = int;
-
-	[[nodiscard]]	/*#UPDATE_AT_CPP23 static*/
-	constexpr auto operator() (string_view lhs, string_view rhs) const noexcept
-	{
-		return lhs < rhs;
-	}
-};
-
 using localization_t = pair<string, string>;
 using string_set_t = std::set<string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_set
 using sv_set_t = std::set<string_view, std::less<>>;
-using crc_dictionary_t = std::unordered_map<string, uint64_t, std::hash<string_view>, std::equal_to<string_view>>;
+using crc_dict_t = std::unordered_map<string, uint64_t, std::hash<string_view>, std::equal_to<string_view>>;
 using dictionary_t = std::map<string, string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_map
 using dict_view_t = std::map<string_view, string_view, std::less<>>;
 
@@ -222,21 +195,16 @@ recursive_generator<localization_t> ExtractTranslationKeyValues(const string &sz
 	{
 		for (auto i = elem->FirstChildElement(); i; i = i->NextSiblingElement())
 		{
-			auto const szNextAccumulatedName = szAccumulatedName + "."s + i->Value();
-			auto const szIdentifier =	// #TODO hard to tell since inheritance exists.
-				/*(szAccumulatedName.find_last_of('.') == string::npos ?
-					szAccumulatedName.empty() ?
-					""s :
-					(szAccumulatedName + '.') :
-					(szAccumulatedName.substr(szAccumulatedName.find_last_of('.')) + '.')
-					) + */i->Value();
+			auto const szClassName = string_view{ i->Name() };
+			auto const szFieldName = string_view{ i->Value() };
+			auto const szNextAccumulatedName = std::format("{}.{}", szAccumulatedName, szFieldName);
 
 			// Case 1: this is a key we should translate!
-			if (std::ranges::contains(g_rgszNodeShouldLocalise, szIdentifier))
+			if (std::ranges::contains(g_rgszNodeShouldLocalise, szFieldName))
 				co_yield{ szNextAccumulatedName, i->GetText() ? i->GetText() : ""s };
 
 			// Case 2: this is an array of strings!
-			else if (std::ranges::contains(g_rgszNodeShouldLocaliseAsArray, szIdentifier))
+			else if (std::ranges::contains(g_rgszNodeShouldLocaliseAsArray, szFieldName))
 			{
 				unsigned index = 0;
 
@@ -287,7 +255,7 @@ recursive_generator<localization_t> ExtractTranslationKeyValues(const fs::path& 
 }
 
 static
-EDecision GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOtherLang, sv_set_t const& rgszExistedEntries, sv_set_t* prgszDeadEntries, crc_dictionary_t const& mCRC, EDecision LastAction) noexcept
+EDecision GenerateDummyForFile(const fs::path& hXmlEnglish, const fs::path& hXmlOtherLang, sv_set_t const& rgszExistedEntries, sv_set_t* prgszDeadEntries, crc_dict_t const& mCRC, EDecision LastAction) noexcept
 {
 	auto const fnDirtOrNew =
 		[&](localization_t const& kv) noexcept -> bool
@@ -501,7 +469,7 @@ void GenerateDummyForMod(const fs::path& hModFolder, string_view szLanguage) noe
 
 #endif
 
-	crc_dictionary_t mCRC{};	// Existing crc64
+	crc_dict_t mCRC{};	// Existing crc64
 
 	if (auto const hChecksumPath = hModFolder / L"Languages" / szLanguage / L"checksum.xml.RWPHG"; fs::exists(hChecksumPath))
 	{
@@ -788,4 +756,21 @@ void InspectDuplicatedOriginalText(fs::path const& hModFolder) noexcept
 			}
 		}
 	}
+}
+
+[[nodiscard]]
+static generator<fs::path> GetAllDefFiles(fs::path const& hModFolder) noexcept
+{
+	// Handle DefInjection
+	for (auto&& hPath :
+		fs::recursive_directory_iterator(hModFolder / L"Defs")
+		| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
+		| std::views::transform(&fs::directory_entry::path)
+		| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".xml") == 0; })
+		)
+	{
+		co_yield std::remove_cvref_t<decltype(hPath)>{ hPath };	// #UPDATE_AT_CPP23 auto{x}
+	}
+
+	co_return;
 }
