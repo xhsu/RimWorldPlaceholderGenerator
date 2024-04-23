@@ -161,7 +161,6 @@ static recursive_generator<trnsltn_t> ExtractAllEntriesFromObject(string szPrevI
 
 			for (auto li = field->FirstChildElement("li"); li; li = li->NextSiblingElement("li"), ++idx)
 			{
-				//li->SetName(std::to_string(idx).c_str());
 				// Everything wrapped in <li/> would be considered as one individual object.
 				co_yield ExtractAllEntriesFromObject(
 					std::format("{}.{}", szThisIdentifier, idx),
@@ -184,12 +183,29 @@ static recursive_generator<trnsltn_t> ExtractAllEntriesFromFile(fs::path const& 
 
 	auto const szFileName = file.filename().native();
 
+	// DefInjected
 	for (auto defs = xml.FirstChildElement("Defs"); defs; defs = defs->NextSiblingElement("Defs"))
 	{
 		for (auto def = defs->FirstChildElement(); def; def = def->NextSiblingElement())
 		{
 			if (auto defName = def->FirstChildElement("defName"); defName)
 				co_yield ExtractAllEntriesFromObject(defName->GetText(), def->Name(), szFileName, def);
+		}
+	}
+
+	// Keyed #UNTESTED
+	for (auto LanguageData = xml.FirstChildElement("LanguageData");
+		LanguageData != nullptr;
+		LanguageData = LanguageData->NextSiblingElement("LanguageData"))
+	{
+		for (auto entry = LanguageData->FirstChildElement();
+			entry != nullptr;
+			entry = entry->NextSiblingElement())
+		{
+			co_yield{
+				Path::TargetLangKeyed / szFileName,
+				LanguageData->Name(), LanguageData->GetText(),
+			};
 		}
 	}
 }
