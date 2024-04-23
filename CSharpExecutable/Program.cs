@@ -9,10 +9,10 @@ namespace CSharpExecutable
 	{
 		// Fuck C#, why the alignment has to be constant??
 
-		const int LongestFullName = -44;
-		const int LongestNamespace = -14;
-		const int LongestName = -35;
-		const int LongestBase = -29;
+		const int LongestFullName = -63;
+		const int LongestNamespace = -13;
+		const int LongestName = -54;
+		const int LongestBase = -57;
 
 		public static void WriteArray(this StreamWriter file, List<string> arr)
 		{
@@ -27,13 +27,28 @@ namespace CSharpExecutable
 			}
 		}
 
+		public static void WritePairs(this StreamWriter file, List<(string, string)> arr)
+		{
+			if (arr.Count > 0)
+			{
+				var Text = string.Join(", ", arr.Select(p => $"{{ \"{p.Item1}\", \"{p.Item2}\" }}"));
+				file.Write($"{{ {Text} }}, ");
+			}
+			else
+			{
+				file.Write("{}, ");
+			}
+		}
+
 		public static void Main(string[] args)
 		{
 			var VanillaClassInfo = RimWolrdVanilla.GetClasses();
-			//var LongestFullName = VanillaClassInfo.Keys.Max(s => s.Length) + 3;
-			//var LongestNamespace = VanillaClassInfo.Values.Max(info => info.Namespace.Length) + 3;
-			//var LongestName = VanillaClassInfo.Values.Max(info => info.Name.Length) + 3;
-			//var LongestBase = VanillaClassInfo.Values.Max(info => info.Base.Length) + 3;
+			//var LongestFullName_dyn = VanillaClassInfo.Keys.Max(s => s.Length) + 2;
+			//var LongestNamespace_dyn = VanillaClassInfo.Values.Max(info => info.Namespace.Length) + 2;
+			//var LongestName_dyn = VanillaClassInfo.Values.Max(info => info.Name.Length) + 2;
+			//var LongestBase_dyn = VanillaClassInfo.Values.Max(info => info.Base.Length) + 2;
+
+			//Console.WriteLine($"{LongestFullName_dyn}, {LongestNamespace_dyn}, {LongestName_dyn}, {LongestBase_dyn}");
 
 			using var hpp = new StreamWriter("../../../../RimWorldClasses.hpp");
 
@@ -44,14 +59,15 @@ namespace CSharpExecutable
 			{
 				hpp.Write($"\t{{ {$"\"{Name}\"",LongestFullName}, {{ {$"\"{Info.Namespace}\"",LongestNamespace}, {$"\"{Info.Name}\"",LongestName}, {$"\"{Info.Base}\"",LongestBase}, ");
 				hpp.WriteArray(Info.MustTranslates);
-				hpp.WriteArray(Info.MustTranslateAsArray);
+				hpp.WriteArray(Info.ArraysMustTranslate);
+				hpp.WritePairs(Info.ObjectArrays);
 				hpp.WriteLine("}, },");
 			}
 
 			hpp.WriteLine("};");
 			hpp.WriteLine();
 
-			Console.WriteLine("File RimWorldClasses.hpp had been outputed.");
+			Console.WriteLine("File 'RimWorldClasses.hpp' had been outputed.");
 			Console.WriteLine($"{VanillaClassInfo.Count} classes were exported.");
 		}
 	}

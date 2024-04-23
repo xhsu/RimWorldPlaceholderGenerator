@@ -41,11 +41,18 @@ struct sv_less_t final
 
 struct class_info_t final
 {
+	struct objarr_info_t final
+	{
+		std::string m_ElemType{};
+		std::string m_FieldName{};
+	};
+
 	std::string m_Namespace{};
 	std::string m_Name{};
 	std::string m_Base{};
 	std::vector<std::string> m_MustTranslates{};
-	std::vector<std::string> m_MustTranslateAsArray{};
+	std::vector<std::string> m_ArraysMustTranslate{};
+	std::vector<objarr_info_t> m_ObjectArrays{};
 
 	[[nodiscard]]
 	inline std::string FullName() const noexcept

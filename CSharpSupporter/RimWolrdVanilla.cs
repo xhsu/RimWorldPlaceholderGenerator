@@ -1,15 +1,28 @@
-﻿using System.Reflection;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace CSharpSupporter
 {
 	public class ClassInfo
 	{
+		[SetsRequiredMembers]
+		public ClassInfo(Type ty)
+		{
+			Namespace = ty.Namespace ?? "";
+			Name = ty.Name;
+			Base = ty.BaseType?.FullName ?? ty.BaseType?.Name ?? "";
+
+			if (Base == typeof(System.Object).FullName)
+				Base = ""; // This doesn't count!!
+		}
+
 		public required string Namespace;
 		public required string Name;
 		public required string Base;
 		public List<string> MustTranslates = [];
-		public List<string> MustTranslateAsArray = [];
+		public List<string> ArraysMustTranslate = [];
+		public List<(string, string)> ObjectArrays = [];
 	}
 
 	public static class RimWolrdVanilla
@@ -36,28 +49,18 @@ namespace CSharpSupporter
 
 			var rimWorldAsm = mlc.LoadFromAssemblyPath(ASSEMBLY_ABS_PATH);
 			var tVerseDef = rimWorldAsm.GetType("Verse.Def");
-
-			var defTypes =
-				from ty in rimWorldAsm.GetTypes()
-				where ty.Name.EndsWith("Def")
-				where ty.IsAssignableTo(tVerseDef)
-				select ty;
-
-			// This one is special, just for the sake of 'Def' itself.
-			defTypes = defTypes.Concat([rimWorldAsm.GetType("Verse.Editable")]);
-			//var rit = rimWorldAsm.GetType("RimWorld.RitualOutcomeEffectDef");
+			var tEditable = rimWorldAsm.GetType("Verse.Editable");
 
 			SortedDictionary<string, ClassInfo> classes = [];
-			foreach (var ty in defTypes)
+			classes[tEditable!.FullName!] = new ClassInfo(tEditable);
+
+			var ArrayOfObjects = new List<FieldInfo>();
+
+			foreach (var ty in rimWorldAsm.GetTypes().Where(t => !t.IsGenericType))
 			{
 				try
 				{
-					var info = new ClassInfo
-					{
-						Namespace = ty.Namespace ?? "",
-						Name = ty.Name,
-						Base = ty.BaseType?.FullName ?? ty.BaseType?.Name ?? "",
-					};
+					var info = new ClassInfo(ty);
 
 					foreach (var field in ty.GetFields())   // Inherited fields will be included.
 					{
@@ -66,20 +69,32 @@ namespace CSharpSupporter
 							if (field.CustomAttributes.Any(att => att.AttributeType.FullName?.Contains("MustTranslate") ?? false))
 							{
 								if (field.FieldType.IsGenericType || field.FieldType.IsArray)
-									info.MustTranslateAsArray.Add(field.Name);
+									info.ArraysMustTranslate.Add(field.Name);
 								else
 									info.MustTranslates.Add(field.Name);
+							}
+							else if (field.FieldType.IsGenericType
+								&& field.FieldType.GetGenericTypeDefinition().Name == "List`1"
+								&& field.ReflectedType != null)
+							{
+								ArrayOfObjects.Add(field);
 							}
 						}
 						catch { }
 					}
 
-					if (info.Base == typeof(System.Object).FullName)
-						info.Base = ""; // This doesn't count!!
-
-					classes[ty.FullName ?? ty.Name] = info;
+					if (info.MustTranslates.Count != 0 || info.ArraysMustTranslate.Count != 0)
+						classes[ty.FullName ?? ty.Name] = info;
 				}
 				catch { }
+			}
+
+			foreach (var field in ArrayOfObjects
+				.Where(f => classes.ContainsKey(f.FieldType.GenericTypeArguments.First().FullName ?? f.FieldType.GenericTypeArguments.First().Name))
+				.Where(f => classes.ContainsKey(f.ReflectedType!.FullName ?? f.ReflectedType!.Name)))
+			{
+				classes[field.ReflectedType!.FullName ?? field.ReflectedType!.Name].ObjectArrays
+					.Add((field.FieldType.GenericTypeArguments.First().FullName ?? field.FieldType.GenericTypeArguments.First().Name, field.Name));
 			}
 
 			return classes;
