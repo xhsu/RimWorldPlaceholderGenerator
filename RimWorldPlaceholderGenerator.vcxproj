@@ -133,6 +133,7 @@
   <ItemGroup>
     <ClInclude Include="CPPCLI.hpp" />
     <ClInclude Include="Precompiled.hpp" />
+    <ClInclude Include="Style.hpp" />
     <ClInclude Include="tinyxml2\tinyxml2.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
