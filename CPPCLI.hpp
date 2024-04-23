@@ -2,8 +2,21 @@
 
 // Because of the use of C++/CLI, Modules from C++20 cannot be used.
 
+
+#ifndef _COMPARE_
+#include <compare>
+#endif
+
+#ifndef _FUNCTIONAL_
+#include <functional>
+#endif
+
 #ifndef _MAP_
 #include <map>
+#endif
+
+#ifndef _SET_
+#include <set>
 #endif
 
 #ifndef _SPAN_
@@ -39,20 +52,19 @@ struct sv_less_t final
 	}
 };
 
+using str_set_t = std::set<std::string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_set
+using sv_set_t = std::set<std::string_view, std::less<>>;
+using dictionary_t = std::map<std::string, std::string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_map
+using dict_view_t = std::map<std::string_view, std::string_view, std::less<>>;
+
 struct class_info_t final
 {
-	struct objarr_info_t final
-	{
-		std::string m_ElemType{};
-		std::string m_FieldName{};
-	};
-
 	std::string m_Namespace{};
 	std::string m_Name{};
 	std::string m_Base{};
-	std::vector<std::string> m_MustTranslates{};
-	std::vector<std::string> m_ArraysMustTranslate{};
-	std::vector<objarr_info_t> m_ObjectArrays{};
+	str_set_t m_MustTranslates{};
+	str_set_t m_ArraysMustTranslate{};
+	dictionary_t m_ObjectArrays{};	// key: FieldName, value: FieldType
 
 	[[nodiscard]]
 	inline std::string FullName() const noexcept
@@ -65,19 +77,6 @@ struct class_info_t final
 };
 
 using classinfo_dict_t = std::map<std::string, class_info_t, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_map
-
-inline constexpr char CLASSNAME_VERSE_DEF[] = "Verse.Def";
-
-#include "RimWorldClasses.hpp"
-//inline classinfo_dict_t gRimWorldClasses;
-inline classinfo_dict_t gModClasses;
-inline constexpr classinfo_dict_t const* ALL_DICTS[] = { &gRimWorldClasses, &gModClasses, };
-
-[[nodiscard]]
-extern class_info_t const* GetRootDefClassName(class_info_t const& info, std::span<classinfo_dict_t const*> dicts) noexcept;
-
-[[nodiscard]]
-extern classinfo_dict_t GetVanillaClassInfo(const wchar_t* rim_world_dll = LR"(D:\SteamLibrary\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\Assembly-CSharp.dll)");
 
 [[nodiscard]]
 extern classinfo_dict_t GetModClasses(const char* path_to_mod);

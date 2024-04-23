@@ -18,4 +18,5 @@ EXPORT namespace Style
 	inline constexpr auto Action = fmt::emphasis::bold | fmt::fg(fmt::color::sky_blue);
 	inline constexpr auto Positive = fmt::fg(fmt::color::lime_green);
 	inline constexpr auto Debug = fmt::fg(fmt::color::chocolate);
+	inline constexpr auto Conclusion = fmt::fg(fmt::color::dark_blue) | fmt::bg(fmt::color::white);
 }

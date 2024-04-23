@@ -1,7 +1,7 @@
 //#define USING_MULTITHREAD
 
 #include "Precompiled.hpp"
-#include "CPPCLI.hpp"
+#include "Mod.hpp"
 
 import Application;
 import CRC64;
@@ -26,15 +26,11 @@ using std::string;
 using std::string_view;
 using std::vector;
 
-using cppcoro::recursive_generator;
 using cppcoro::generator;
+using cppcoro::recursive_generator;
 
 using localization_t = pair<string, string>;
-using string_set_t = std::set<string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_set
-using sv_set_t = std::set<string_view, std::less<>>;
 using crc_dict_t = std::unordered_map<string, uint64_t, std::hash<string_view>, std::equal_to<string_view>>;
-using dictionary_t = std::map<string, string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_map
-using dict_view_t = std::map<string_view, string_view, std::less<>>;
 
 inline constexpr array g_rgszNodeShouldLocalise =
 {
@@ -175,6 +171,24 @@ enum struct EDecision
 #undef EXPORT
 #endif
 #define EXPORT
+
+EXPORT [[nodiscard]]
+class_info_t const* GetRootDefClassName(class_info_t const& info, std::span<classinfo_dict_t const* const> dicts) noexcept
+{
+	if (info.m_Base.empty())
+		return &info;
+
+	if (info.m_Base == "Verse.Def")
+		return &info;
+
+	for (auto&& dict : dicts)
+	{
+		if (dict->contains(info.m_Base))
+			return GetRootDefClassName(dict->at(info.m_Base), dicts);
+	}
+
+	return nullptr;
+}
 
 EXPORT [[nodiscard]]
 generator<string> ListModFolder(const fs::path& hModFolder) noexcept
@@ -486,7 +500,7 @@ void GenerateDummyForMod(const fs::path& hModFolder, string_view szLanguage) noe
 					for (auto i = LanguageData->FirstChildElement(); i != nullptr; i = i->NextSiblingElement())
 					{
 						auto&& [iter, bNewEntry] = mCRC.try_emplace(i->Name(), i->Unsigned64Attribute("CRC64"));
-						assert(bNewEntry);
+						//assert(bNewEntry);
 
 						[[unlikely]]
 						if (!bNewEntry)

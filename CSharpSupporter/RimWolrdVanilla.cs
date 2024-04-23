@@ -94,7 +94,7 @@ namespace CSharpSupporter
 				.Where(f => classes.ContainsKey(f.ReflectedType!.FullName ?? f.ReflectedType!.Name)))
 			{
 				classes[field.ReflectedType!.FullName ?? field.ReflectedType!.Name].ObjectArrays
-					.Add((field.FieldType.GenericTypeArguments.First().FullName ?? field.FieldType.GenericTypeArguments.First().Name, field.Name));
+					.Add((field.Name, field.FieldType.GenericTypeArguments.First().FullName ?? field.FieldType.GenericTypeArguments.First().Name));
 			}
 
 			return classes;

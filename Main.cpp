@@ -2,7 +2,7 @@
 //
 
 #include "Precompiled.hpp"
-#include "CPPCLI.hpp"
+#include "Mod.hpp"
 
 import Application;
 import Style;
@@ -48,7 +48,8 @@ inline constexpr array g_rgszAutoCompleteLanguages =
 extern void GenerateDummyForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
 extern void GenerateCrcRecordForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
 extern void InspectDuplicatedOriginalText(fs::path const& hModFolder) noexcept;
-extern void CShaprFunction(const char* path_to_mod);
+extern void GetAllTranslationEntries(fs::path const& hModFolder) noexcept;
+extern void ExtractAllEntriesFromFile(fs::path const& file) noexcept;
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -96,8 +97,11 @@ int main(int argc, char *argv[]) noexcept
 		}
 
 		fmt::print("Selected language: {}\n\n", sz);
+#ifndef _DEBUG
 		std::this_thread::sleep_for(1s);
+#endif
 
+		Path::Resolve(argv[1], sz);
 		InspectDuplicatedOriginalText(argv[1]);
 		GenerateDummyForMod(argv[1], sz);
 		GenerateCrcRecordForMod(argv[1], sz);
@@ -111,12 +115,16 @@ int main(int argc, char *argv[]) noexcept
 
 	case 3:
 		gModClasses = GetModClasses(argv[1]);
+		gAllNamespaces.insert_range(gModClasses | std::views::values | std::views::transform(&class_info_t::m_Namespace));
+		Path::Resolve(argv[1], argv[2]);
+
+		GetAllTranslationEntries(argv[1]);
 		fmt::print(Style::Info, "Selected mod path: {}\n", argv[1]);
 		fmt::print(Style::Info, "Selected language: {}\n\n", argv[2]);
 #ifndef _DEBUG
 		std::this_thread::sleep_for(1s);
 #endif
-		InspectDuplicatedOriginalText(argv[1]);
+		//InspectDuplicatedOriginalText(argv[1]);
 		GenerateDummyForMod(argv[1], argv[2]);
 		GenerateCrcRecordForMod(argv[1], argv[2]);
 

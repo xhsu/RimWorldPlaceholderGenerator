@@ -4,9 +4,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.1.32228.430
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RimWorldPlaceholderGenerator", "RimWorldPlaceholderGenerator.vcxproj", "{98C55058-6E67-4E46-A6F4-077088B415B0}"
-	ProjectSection(ProjectDependencies) = postProject
-		{BCC1175D-242E-4D97-9933-30C1EF3BF669} = {BCC1175D-242E-4D97-9933-30C1EF3BF669}
-	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CSharpSupporter", "CSharpSupporter\CSharpSupporter.csproj", "{BCC1175D-242E-4D97-9933-30C1EF3BF669}"
 EndProject

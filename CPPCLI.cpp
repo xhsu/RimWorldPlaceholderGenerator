@@ -17,10 +17,12 @@
 #include <string>
 #include <vector>
 
-#include <fmt/core.h>
+#include <fmt/color.h>
 #include <fmt/ranges.h>
 
 #include "CPPCLI.hpp"
+#include "Style.hpp"
+extern classinfo_dict_t const gRimWorldClasses;
 
 
 //using namespace CSharpSupporter;
@@ -106,11 +108,13 @@ static void ParseTypes(array<Type^>^ types, Type^ tTypeofDef, classinfo_dict_t* 
 		select ty;
 	*/
 
+	auto candidates = gcnew List<FieldInfo^>;
+
 	for each (auto ty in types)
 	{
 		try
 		{
-			if (!tTypeofDef->IsAssignableFrom(ty))
+			if (ty->IsGenericType)
 				continue;
 
 			if (pfnFilter && !pfnFilter(ty))
@@ -137,22 +141,62 @@ static void ParseTypes(array<Type^>^ types, Type^ tTypeofDef, classinfo_dict_t* 
 			{
 				try
 				{
+					bool bHandled = false;
+
 					for each (auto attr in field->CustomAttributes)
 					{
 						if (attr->AttributeType->FullName != nullptr
 							&& attr->AttributeType->FullName->Contains("MustTranslate"))
 						{
-							info.m_MustTranslates.emplace_back(cli_to_stl(field->Name));
+							bHandled = true;
+
+							if (field->FieldType->IsGenericType || field->FieldType->IsArray)
+								info.m_ArraysMustTranslate.emplace(cli_to_stl(field->Name));
+							else
+								info.m_MustTranslates.emplace(cli_to_stl(field->Name));
 						}
+					}
+
+					if (!bHandled
+						&& field->FieldType->IsGenericType
+						&& field->FieldType->GetGenericTypeDefinition()->Name == "List`1"
+						&& field->ReflectedType != nullptr)
+					{
+						bHandled = true;
+						candidates->Add(field);
 					}
 				}
 				catch (...) { fmt::println("Members of type '{}' cannot be parse!", cli_to_stl(ty->FullName)); }
 			}
 
+			// Although in C# it make sense that everything derived from object.
 			if (info.m_Base == "System.Object")
 				info.m_Base.clear();
+
+			// It's a class without any translation entry.
+			if (info.m_MustTranslates.size() == 0 && info.m_ArraysMustTranslate.size() == 0)
+				pret->erase(iter);
 		}
 		catch (...) { fmt::println("Type '{}' is inaccessible!", cli_to_stl(ty->FullName)); }
+	}
+
+	for each (auto field in candidates)
+	{
+		Type^ ElemType = field->FieldType->GenericTypeArguments[0];
+		Type^ ReflType = field->ReflectedType;
+
+		auto ElemName = cli_to_stl(ElemType->FullName != nullptr ? ElemType->FullName : ElemType->Name);
+		auto ReflName = cli_to_stl(ReflType->FullName != nullptr ? ReflType->FullName : ReflType->Name);
+
+		// Make sure both elem and refl are either in the return list or in base game.
+		if ((!pret->contains(ElemName) && !gRimWorldClasses.contains(ElemName))
+			|| (!pret->contains(ReflName) && !gRimWorldClasses.contains(ReflName)))
+			continue;
+
+		pret->at(ReflName).m_ObjectArrays.try_emplace(
+			cli_to_stl(field->Name),
+			std::move(ElemName)
+		);
 	}
 }
 
@@ -188,32 +232,6 @@ static void GetModClasses(Assembly^ dll, Type^ tTypeofDef, classinfo_dict_t* pre
 	}
 }
 
-[[nodiscard]]
-classinfo_dict_t GetVanillaClassInfo(const wchar_t* rim_world_dll)
-{
-	auto assembly = Assembly::LoadFrom(gcnew String(rim_world_dll));
-	auto types = assembly->GetTypes();
-
-	auto tTypeofDef = assembly->GetType(gcnew String(CLASSNAME_VERSE_DEF));
-	auto tTypeofEditable = assembly->GetType("Verse.Editable");	// This one is special, just for the sake of 'Def' itself.
-
-	classinfo_dict_t ClassInfo
-	{
-		// The first item: Verse.Editable
-		std::pair{
-			cli_to_stl(tTypeofEditable->FullName),
-			class_info_t{
-				.m_Namespace{ cli_to_stl(tTypeofEditable->Namespace) },
-				.m_Name{ cli_to_stl(tTypeofEditable->Name) },
-				.m_Base{ "" },	// "System.Object", skipped
-			},
-		},
-	};
-
-	ParseTypes(types, tTypeofDef, &ClassInfo, [](Type^ ty) { return ty->Name->EndsWith("Def"); });
-	return ClassInfo;
-}
-
 static Assembly^ LoadAssembly(String^ dll, bool bShowLog)
 {
 	if (auto abs_path = Path::GetFullPath(dll);
@@ -221,9 +239,10 @@ static Assembly^ LoadAssembly(String^ dll, bool bShowLog)
 	{
 		if (bShowLog)
 		{
-			Console::ForegroundColor = ConsoleColor::DarkGray;
-			Console::WriteLine("Loading Assembly: {0}", abs_path);
-			Console::ForegroundColor = ConsoleColor::White;
+			fmt::print(
+				Style::Skipping, "Loading Assembly: {0}\n",
+				cli_to_stl(abs_path)
+			);
 		}
 
 		// Regarding LoadFile() and LoadFrom()
@@ -268,8 +287,11 @@ static List<Assembly^>^ LoadAllAssemblyFromDir(String^ dir_)
 		Console::WriteLine("Error encounter in '::LoadAllAssemblyFromDir': {0}", ex->ToString());
 	}
 
-	Console::WriteLine("{0} assembl{2} loaded from '{1}'", LoadedCount, dir_, LoadedCount < 2 ? "y" : "ies");
-	Console::ForegroundColor = ConsoleColor::White;
+	fmt::print(
+		Style::Skipping, "{0} assembl{2} loaded from '{1}'\n",
+		LoadedCount, dir.u8string(), LoadedCount < 2 ? "y" : "ies"
+	);
+
 	return ret;
 }
 
@@ -282,24 +304,6 @@ static Assembly^ LoadUnityEngine(String^ eng_dir)
 	{
 		if (asmb->GetName()->Name == "Assembly-CSharp")
 			return asmb;
-	}
-
-	return nullptr;
-}
-
-[[nodiscard]]
-class_info_t const* GetRootDefClassName(class_info_t const& info, std::span<classinfo_dict_t const*> dicts) noexcept
-{
-	if (info.m_Base.empty())
-		return &info;
-
-	if (info.m_Base == std::string_view{ CLASSNAME_VERSE_DEF })
-		return &info;
-
-	for (auto&& dict : dicts)
-	{
-		if (dict->contains(info.m_Base))
-			return GetRootDefClassName(dict->at(info.m_Base), dicts);
 	}
 
 	return nullptr;
@@ -325,12 +329,11 @@ classinfo_dict_t GetModClasses(const char* path_to_mod)
 	for each (auto assembly in assemblies)
 		GetModClasses(assembly, tTypeofDef, &ret);
 
-	Console::BackgroundColor = ConsoleColor::White;
-	Console::ForegroundColor = ConsoleColor::DarkBlue;
-	Console::WriteLine("{0} types loaded from mod.", ret.size());
-	Console::BackgroundColor = ConsoleColor::Black;
-	Console::ForegroundColor = ConsoleColor::White;
-	Console::Write(L'\n');
+	fmt::print(
+		Style::Positive,
+		"{0} types loaded from mod.\n", ret.size()
+	);
+	fmt::println("");
 
 	return ret;
 }
