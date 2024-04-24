@@ -22,6 +22,11 @@ namespace Path
 	inline path TargetLangKeyed;
 	inline path TargetLangStrings;
 
+	namespace Lang
+	{
+		inline path CRC;
+	}
+
 	namespace Source
 	{
 		inline path Strings;

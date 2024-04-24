@@ -120,6 +120,7 @@ void Path::Resolve(string_view path_to_mod, string_view target_lang) noexcept
 	TargetLangDefInjected = TargetLangDirectory / L"DefInjected";
 	TargetLangKeyed = TargetLangDirectory / L"Keyed";
 	TargetLangStrings = TargetLangDirectory / L"Strings";
+	Lang::CRC = TargetLangDirectory / L"CRC.RWPHG";
 
 	Source::Strings = ModDirectory / L"Languages" / L"English" / L"Strings";
 	Source::HasStrings = fs::exists(Source::Strings) && fs::is_directory(Source::Strings);
@@ -395,11 +396,18 @@ static void GenerateCRC(span<translation_t const> source = gAllSourceTexts, crc_
 	}
 }
 
-static void LoadCRC(fs::path const& prev_records, crc_dict_t_2* pret = &gPrevCRC) noexcept
+static void LoadCRC(fs::path const& prev_records = Path::Lang::CRC, crc_dict_t_2* pret = &gPrevCRC) noexcept
 {
 	auto const prev_records_str = prev_records.u8string();
-	XMLDocument xml;
 
+	if (!fs::exists(prev_records))
+	{
+		fmt::print(Style::Warning, "CRC checksum record '{}", fmt::styled(prev_records_str, Style::Name));	// fmtlib cannot restore to main style after any alteration.
+		fmt::print(Style::Warning, "' no found.\nSkipping dirt check.\n\n");
+		return;
+	}
+
+	XMLDocument xml;
 	if (auto err = xml.LoadFile(prev_records_str.c_str()); err != XML_SUCCESS) [[unlikely]]
 		fmt::print(Style::Error, "XMLDocument::LoadFile returns: {1} ({0})\n", XMLDocument::ErrorIDToName(err), std::to_underlying(err));
 
@@ -422,7 +430,7 @@ static void LoadCRC(fs::path const& prev_records, crc_dict_t_2* pret = &gPrevCRC
 	}
 }
 
-static void SaveCRC(fs::path const& save_to, crc_dict_t_2 const& records = gCurCRC)
+static void SaveCRC(fs::path const& save_to = Path::Lang::CRC, crc_dict_t_2 const& records = gCurCRC)
 {
 	XMLDocument xml;
 	xml.InsertFirstChild(xml.NewDeclaration());
@@ -434,8 +442,8 @@ static void SaveCRC(fs::path const& save_to, crc_dict_t_2 const& records = gCurC
 	Version->SetAttribute("Minor", APP_VERSION.m_minor);
 	Version->SetAttribute("Revision", APP_VERSION.m_revision);
 	Version->SetAttribute("Build", APP_VERSION.m_build);
-	Version->SetAttribute("Date", BUILD_NUMBER);
-
+	Version->SetAttribute("Julian", BUILD_NUMBER);
+	Version->SetAttribute("Checksum", APP_VERSION.AsInt32());
 
 	auto const Records = xml.NewElement("Records");
 	xml.InsertEndChild(Records);
