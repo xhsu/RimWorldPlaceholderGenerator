@@ -22,6 +22,12 @@ namespace Path
 	inline path TargetLangKeyed;
 	inline path TargetLangStrings;
 
+	namespace Source
+	{
+		inline path Strings;
+		inline bool HasStrings = false;
+	}
+
 	void Resolve(std::string_view path_to_mod, std::string_view target_lang) noexcept;
 	path RelativeToLang(path const& hPath) noexcept;
 }
@@ -33,3 +39,14 @@ inline constexpr classinfo_dict_t const* ALL_DICTS[] = { &gRimWorldClasses, &gMo
 
 [[nodiscard]]
 extern class_info_t const* GetRootDefClassName(class_info_t const& info, std::span<classinfo_dict_t const* const> dicts = ALL_DICTS) noexcept;
+
+inline void CheckStringForXML(std::string* s) noexcept
+{
+	for (auto& c : *s)
+	{
+		if (c == '\\' || c == '/')
+			c = '.';
+		else if (std::isspace(c))
+			c = '_';
+	}
+}

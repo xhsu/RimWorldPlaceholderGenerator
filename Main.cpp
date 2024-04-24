@@ -48,8 +48,13 @@ inline constexpr array g_rgszAutoCompleteLanguages =
 extern void GenerateDummyForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
 extern void GenerateCrcRecordForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
 extern void InspectDuplicatedOriginalText(fs::path const& hModFolder) noexcept;
-extern void GetAllTranslationEntries(fs::path const& hModFolder) noexcept;
-extern void ExtractAllEntriesFromFile(fs::path const& file) noexcept;
+extern void PrepareModData() noexcept;
+
+static int Execute(fs::path const& hModPath, string_view szLanguage) noexcept
+{
+
+	return EXIT_SUCCESS;
+}
 
 int main(int argc, char *argv[]) noexcept
 {
@@ -118,7 +123,7 @@ int main(int argc, char *argv[]) noexcept
 		gAllNamespaces.insert_range(gModClasses | std::views::values | std::views::transform(&class_info_t::m_Namespace));
 		Path::Resolve(argv[1], argv[2]);
 
-		GetAllTranslationEntries(argv[1]);
+		PrepareModData();
 		fmt::print(Style::Info, "Selected mod path: {}\n", argv[1]);
 		fmt::print(Style::Info, "Selected language: {}\n\n", argv[2]);
 #ifndef _DEBUG

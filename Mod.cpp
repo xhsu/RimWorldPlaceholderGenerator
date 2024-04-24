@@ -771,20 +771,3 @@ void InspectDuplicatedOriginalText(fs::path const& hModFolder) noexcept
 		}
 	}
 }
-
-[[nodiscard]]
-static generator<fs::path> GetAllDefFiles(fs::path const& hModFolder) noexcept
-{
-	// Handle DefInjection
-	for (auto&& hPath :
-		fs::recursive_directory_iterator(hModFolder / L"Defs")
-		| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
-		| std::views::transform(&fs::directory_entry::path)
-		| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".xml") == 0; })
-		)
-	{
-		co_yield std::remove_cvref_t<decltype(hPath)>{ hPath };	// #UPDATE_AT_CPP23 auto{x}
-	}
-
-	co_return;
-}
