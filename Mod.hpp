@@ -16,20 +16,24 @@ namespace Path
 {
 	using namespace std::filesystem;
 
-	inline path ModDirectory;
-	inline path TargetLangDirectory;
-	inline path TargetLangDefInjected;
-	inline path TargetLangKeyed;
-	inline path TargetLangStrings;
+	inline path ModDirectory;	// Dir
 
 	namespace Lang
 	{
-		inline path CRC;
+		inline path CRC;	// File
+
+		inline path Directory;	// Dir
+		inline path DefInjected;// Dir
+		inline path Keyed;		// Dir
+		inline path Strings;	// Dir
 	}
 
 	namespace Source
 	{
-		inline path Strings;
+		inline path Keyed;		// Dir
+		inline bool HasKeyed = false;
+
+		inline path Strings;	// Dir
 		inline bool HasStrings = false;
 	}
 

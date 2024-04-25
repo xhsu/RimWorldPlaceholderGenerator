@@ -184,4 +184,17 @@ export namespace CRC64
 
 		return crc;
 	}
+
+	inline uint64_t CheckFile(const wchar_t* pszPath) noexcept
+	{
+		uint64_t crc{};
+
+		if (auto f = _wfopen(pszPath, L"rb"); f)
+		{
+			crc = CheckFile(f);
+			fclose(f);
+		}
+
+		return crc;
+	}
 };

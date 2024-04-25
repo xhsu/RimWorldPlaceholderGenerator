@@ -77,13 +77,15 @@ namespace std
 }
 
 using xmls_t = std::map<fs::path, XMLDocument, std::less<>>;
-using sorted_loc_view_t = std::map<wstring_view, vector<pair<string_view, string_view>>, std::less<>>;
-using crc_dict_t_2 = std::unordered_map<string, uint64_t>;
+using sorted_loc_view_t = std::map<wstring_view, std::map<string_view, string_view, std::less<>>, std::less<>>;
+using crc_dict_t_2 = std::unordered_map<string, uint64_t, std::hash<string_view>, std::equal_to<string_view>>;
+using crc_result_t = std::unordered_map<tr_view_t, bool>;
 
 inline vector<translation_t> gAllSourceTexts;
 inline sorted_loc_view_t gSortedSourceTexts;
 inline xmls_t gAllLocFiles;
 inline crc_dict_t_2 gPrevCRC, gCurCRC;
+inline crc_result_t gCrcCompareResult;
 
 inline std::size_t HashCombine(auto&&... vals) noexcept
 {
@@ -116,12 +118,14 @@ void Path::Resolve(string_view path_to_mod, string_view target_lang) noexcept
 {
 	ModDirectory = fs::absolute(path_to_mod);
 
-	TargetLangDirectory = ModDirectory / target_lang;
-	TargetLangDefInjected = TargetLangDirectory / L"DefInjected";
-	TargetLangKeyed = TargetLangDirectory / L"Keyed";
-	TargetLangStrings = TargetLangDirectory / L"Strings";
-	Lang::CRC = TargetLangDirectory / L"CRC.RWPHG";
+	Lang::Directory = ModDirectory / L"Languages" / target_lang;
+	Lang::DefInjected = Lang::Directory / L"DefInjected";
+	Lang::Keyed = Lang::Directory / L"Keyed";
+	Lang::Strings = Lang::Directory / L"Strings";
+	Lang::CRC = Lang::Directory / L"CRC.RWPHG";
 
+	Source::Keyed = ModDirectory / L"Languages" / L"English" / L"Keyed";
+	Source::HasKeyed = fs::exists(Source::Keyed) && fs::is_directory(Source::Keyed);
 	Source::Strings = ModDirectory / L"Languages" / L"English" / L"Strings";
 	Source::HasStrings = fs::exists(Source::Strings) && fs::is_directory(Source::Strings);
 }
@@ -130,7 +134,7 @@ fs::path Path::RelativeToLang(fs::path const& hPath) noexcept
 {
 	static std::error_code ec{};
 
-	return fs::relative(hPath, TargetLangDirectory, ec);
+	return fs::relative(hPath, Lang::Directory, ec);
 }
 
 [[nodiscard]]
@@ -206,7 +210,7 @@ static generator<fs::path> GetAllXmlSourceFiles(fs::path const& hModFolder) noex
 [[nodiscard]]
 static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 	string szPrevIdentifier, string_view szTypeName, wstring_view szFileName, XMLElement* def,
-	fs::path const& DefInjected = Path::TargetLangDefInjected
+	fs::path const& DefInjected = Path::Lang::DefInjected
 ) noexcept
 {
 	// #TODO no global vars involved?
@@ -287,7 +291,7 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 }
 
 [[nodiscard]]
-static recursive_generator<translation_t> ExtractAllEntriesFromFile(fs::path const& file, fs::path const& Keyed = Path::TargetLangKeyed) noexcept
+static recursive_generator<translation_t> ExtractAllEntriesFromFile(fs::path const& file, fs::path const& Keyed = Path::Lang::Keyed) noexcept
 {
 	XMLDocument xml;
 	xml.LoadFile(file.u8string().c_str());
@@ -334,7 +338,15 @@ static sorted_loc_view_t GetSortedLocView(span<translation_t const> source = gAl
 	sorted_loc_view_t ret{};
 
 	for (auto&& [hPath, szEntry, szWords] : source)
-		ret[hPath.native()].emplace_back(szEntry, szWords);
+	{
+		auto&&[iter, bNewEntry] = ret[hPath.native()].try_emplace(szEntry, szWords);
+
+		if (!bNewEntry) [[unlikely]]
+			fmt::print(
+				Style::Warning, "[Warning] Entry '{}' appears twice in file '{}'.\n\tText '{}' was therefore discarded.",
+				szEntry, Path::RelativeToLang(hPath).u8string(), szWords
+			);
+	}
 
 	return ret;
 }
@@ -430,7 +442,7 @@ static void LoadCRC(fs::path const& prev_records = Path::Lang::CRC, crc_dict_t_2
 	}
 }
 
-static void SaveCRC(fs::path const& save_to = Path::Lang::CRC, crc_dict_t_2 const& records = gCurCRC)
+static void SaveCRC(fs::path const& save_to = Path::Lang::CRC, crc_dict_t_2 const& records = gCurCRC) noexcept
 {
 	XMLDocument xml;
 	xml.InsertFirstChild(xml.NewDeclaration());
@@ -459,6 +471,143 @@ static void SaveCRC(fs::path const& save_to = Path::Lang::CRC, crc_dict_t_2 cons
 	xml.SaveFile(save_to.u8string().c_str());
 }
 
+static void LoadCRC2(fs::path const& prev_records = Path::Lang::CRC, sorted_loc_view_t const& MappedSourceTexts = gSortedSourceTexts, crc_result_t* pret = &gCrcCompareResult, fs::path const& LangDir = Path::Lang::Directory, fs::path const& StringsDir = Path::Source::Strings) noexcept
+{
+	auto const prev_records_str = prev_records.u8string();
+
+	if (!fs::exists(prev_records))
+	{
+		fmt::print(Style::Warning, "CRC checksum record '{}", fmt::styled(prev_records_str, Style::Name));	// fmtlib cannot restore to main style after any alteration.
+		fmt::print(Style::Warning, "' no found.\nSkipping dirt check.\n\n");
+		return;
+	}
+
+	XMLDocument xml;
+	if (auto err = xml.LoadFile(prev_records_str.c_str()); err != XML_SUCCESS) [[unlikely]]
+		fmt::print(Style::Error, "XMLDocument::LoadFile returns: {0} ({1})\n", XMLDocument::ErrorIDToName(err), std::to_underlying(err));
+
+	auto const Records = xml.FirstChildElement("Records");
+	auto const StringFillers = xml.FirstChildElement("StringFillers");
+
+	if (!Records)
+	{
+		fmt::print(Style::Warning, "Bad record file: missing entry 'Records'.\n");
+		goto LAB_SKIP_RECORDS;
+	}
+
+	for (auto Record = Records->FirstChildElement(); Record; Record = Record->NextSiblingElement())
+	{
+		string_view const szPrevFile{ Record->Attribute("File") };
+		fs::path const PrevFile{ LangDir / szPrevFile };	// no matter whether or not the translation exists, the m_TargetingFile is always pointing to the supposely file.
+		string_view const PrevIdentifier{ Record->Attribute("Identifier") };
+		uint64_t const PrevCRC{ Record->Unsigned64Attribute("CRC") };
+
+		auto const itCurFile = MappedSourceTexts.find(PrevFile);
+		if (itCurFile == MappedSourceTexts.cend())
+		{
+			fmt::print(Style::Info, "Dead file: {}\n", szPrevFile);
+			continue;
+		}
+
+		auto const& CurIdentifiers = itCurFile->second;
+		auto const itCurIdentifier = CurIdentifiers.find(PrevIdentifier);
+		if (itCurIdentifier == CurIdentifiers.cend())
+		{
+			fmt::print(Style::Info, "Dead entry '{}' found in file '{}'\n", PrevIdentifier, szPrevFile);
+			continue;
+		}
+
+		auto const& CurText = itCurIdentifier->second;
+		auto const CurCRC = CRC64::CheckStream((std::byte*)CurText.data(), CurText.size());
+		if (PrevCRC != CurCRC)
+		{
+			fmt::print(Style::Skipping, "Dirt entry found: {}\\{}\n", szPrevFile, PrevIdentifier);
+
+			// The compare result view must be built on top of current identifier.
+			// 1. the object lifetime of prev series is about the end.
+			// 2. we are going to searching with current text.
+			pret->try_emplace({ itCurFile->first, itCurIdentifier->first, itCurIdentifier->second }, false);
+		}
+		else
+			pret->try_emplace({ itCurFile->first, itCurIdentifier->first, itCurIdentifier->second }, true);
+	}
+LAB_SKIP_RECORDS:;
+
+	for (auto StringFiller = StringFillers->FirstChildElement(); StringFiller; StringFiller = StringFiller->NextSiblingElement())
+	{
+		string_view const szPrevFile{ StringFiller->Attribute("File") };
+		fs::path const PrevFile{ StringsDir / szPrevFile };	// however, this one must be based on the english version.
+		uint64_t const PrevCRC{ StringFiller->Unsigned64Attribute("CRC") };
+
+		if (!fs::exists(PrevFile))
+		{
+			fmt::print(Style::Info, "Dead file: {}\n", szPrevFile);
+			continue;
+		}
+
+		auto const CurCRC = CRC64::CheckFile(PrevFile.c_str());
+
+		if (CurCRC != PrevCRC)
+			fmt::print(Style::Conclusion, "Dirty file: {}\n", szPrevFile);	// that's all we can do - a warning.
+	}
+}
+
+static void SaveCRC2(fs::path const& save_to = Path::Lang::CRC, span<translation_t const> source = gAllSourceTexts, bool bCheckStringFillers = Path::Source::HasStrings, fs::path const& StringFillerFolder = Path::Source::Strings) noexcept
+{
+	XMLDocument xml;
+	xml.InsertFirstChild(xml.NewDeclaration());
+	xml.SetBOM(true);
+
+	auto const Version = xml.NewElement("Version");
+	xml.InsertEndChild(Version);
+	Version->SetAttribute("Major", APP_VERSION.m_major);
+	Version->SetAttribute("Minor", APP_VERSION.m_minor);
+	Version->SetAttribute("Revision", APP_VERSION.m_revision);
+	Version->SetAttribute("Build", APP_VERSION.m_build);
+	Version->SetAttribute("Julian", BUILD_NUMBER);
+	Version->SetAttribute("Checksum", APP_VERSION.AsInt32());
+
+	auto const Timestamp = xml.NewElement("Timestamp");
+	xml.InsertEndChild(Timestamp);
+	auto const t = fmt::gmtime(std::time(nullptr));
+	Timestamp->SetAttribute("GMT", true);
+	Timestamp->SetAttribute("Date", fmt::format("{:%Y-%m-%d}", t).c_str());
+	Timestamp->SetAttribute("Time", fmt::format("{:%H:%M:%S}", t).c_str());
+
+	auto const Records = xml.NewElement("Records");
+	xml.InsertEndChild(Records);
+
+	for (auto&& [File, Identifier, Text] : source)
+	{
+		auto const Record = Records->InsertNewChildElement("Record");
+
+		Record->SetAttribute("File", Path::RelativeToLang(File).u8string().c_str());
+		Record->SetAttribute("Identifier", Identifier.c_str());
+		Record->SetAttribute("CRC", CRC64::CheckStream((std::byte*)Text.data(), Text.size()));
+	}
+
+	auto const StringFillers = xml.NewElement("StringFillers");
+	xml.InsertEndChild(StringFillers);
+
+	if (bCheckStringFillers)
+	{
+		for (auto&& hPath :
+			fs::recursive_directory_iterator(StringFillerFolder)
+			| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
+			| std::views::transform(&fs::directory_entry::path)
+			| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".txt") == 0; })
+			)
+		{
+			auto const StringFiller = StringFillers->InsertNewChildElement("StringFiller");
+
+			StringFiller->SetAttribute("File", fs::relative(hPath, StringFillerFolder).u8string().c_str());
+			StringFiller->SetAttribute("CRC", CRC64::CheckFile(hPath.c_str()));
+		}
+	}
+
+	xml.SaveFile(save_to.u8string().c_str());
+}
+
 void PrepareModData() noexcept
 {
 	if (gAllSourceTexts.empty())
@@ -467,7 +616,9 @@ void PrepareModData() noexcept
 	if (gSortedSourceTexts.empty())
 		gSortedSourceTexts = GetSortedLocView(gAllSourceTexts);
 
-	GenerateCRC();
-	LoadCRC("test.xml");
-	SaveCRC(L"test.xml");
+	//GenerateCRC();
+	//LoadCRC(L"test.xml");
+	//SaveCRC(L"test.xml");
+	LoadCRC2(L"test.xml");
+	SaveCRC2(L"test.xml");
 }
