@@ -78,13 +78,11 @@ namespace std
 
 using xmls_t = std::map<fs::path, XMLDocument, std::less<>>;
 using sorted_loc_view_t = std::map<wstring_view, std::map<string_view, string_view, std::less<>>, std::less<>>;
-using crc_dict_t_2 = std::unordered_map<string, uint64_t, std::hash<string_view>, std::equal_to<string_view>>;
 using crc_result_t = std::unordered_map<tr_view_t, bool>;
 
 inline vector<translation_t> gAllSourceTexts;
 inline sorted_loc_view_t gSortedSourceTexts;
 inline xmls_t gAllLocFiles;
-inline crc_dict_t_2 gPrevCRC, gCurCRC;
 inline crc_result_t gCrcCompareResult;
 
 inline std::size_t HashCombine(auto&&... vals) noexcept
@@ -375,103 +373,13 @@ static void CollectAllLocFiles(xmls_t* pret = &gAllLocFiles, sorted_loc_view_t c
 	}
 }
 
-static void GenerateCRC(span<translation_t const> source = gAllSourceTexts, crc_dict_t_2* pret = &gCurCRC, bool bCheckStringFillers = Path::Source::HasStrings, fs::path const& StringFillerFolder = Path::Source::Strings) noexcept
-{
-	for (auto&& elem : source)
-	{
-		auto&& [iter, bNewEntry] = pret->try_emplace(
-			elem.GetCrcIdentifier(),
-			CRC64::CheckStream((std::byte*)elem.m_Text.data(), elem.m_Text.size())
-		);
-
-		if (!bNewEntry)
-			fmt::print(Style::Warning, "[Warning] Duplicated record for {}::{}", elem.m_TargetFile.filename().u8string(), elem.m_Identifier);
-	}
-
-	if (bCheckStringFillers)
-	{
-		for (auto&& hPath :
-			fs::recursive_directory_iterator(StringFillerFolder)
-			| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
-			| std::views::transform(&fs::directory_entry::path)
-			| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".txt") == 0; })
-			)
-		{
-			auto ret = fs::relative(hPath, StringFillerFolder).u8string();
-			CheckStringForXML(&ret);
-
-			pret->try_emplace(
-				std::move(ret),
-				CRC64::CheckFile(hPath.u8string().c_str())
-			);
-		}
-	}
-}
-
-static void LoadCRC(fs::path const& prev_records = Path::Lang::CRC, crc_dict_t_2* pret = &gPrevCRC) noexcept
-{
-	auto const prev_records_str = prev_records.u8string();
-
-	if (!fs::exists(prev_records))
-	{
-		fmt::print(Style::Warning, "CRC checksum record '{}", fmt::styled(prev_records_str, Style::Name));	// fmtlib cannot restore to main style after any alteration.
-		fmt::print(Style::Warning, "' no found.\nSkipping dirt check.\n\n");
-		return;
-	}
-
-	XMLDocument xml;
-	if (auto err = xml.LoadFile(prev_records_str.c_str()); err != XML_SUCCESS) [[unlikely]]
-		fmt::print(Style::Error, "XMLDocument::LoadFile returns: {1} ({0})\n", XMLDocument::ErrorIDToName(err), std::to_underlying(err));
-
-	auto const Records = xml.FirstChildElement("Records");
-	if (!Records) [[unlikely]]
-	{
-		fmt::print(Style::Warning, "Bad CRC record file: {}\n", prev_records_str);
-		return;
-	}
-
-	for (auto i = Records->FirstChildElement(); i; i = i->NextSiblingElement())
-	{
-		auto&& [iter, bNewEntry] = pret->try_emplace(
-			i->Name(),
-			i->Unsigned64Attribute("CRC")
-		);
-	
-		if (!bNewEntry) [[unlikely]]
-			fmt::print(Style::Warning, "[Warning] Duplicated previous CRC record entry: '{}'", iter->first);
-	}
-}
-
-static void SaveCRC(fs::path const& save_to = Path::Lang::CRC, crc_dict_t_2 const& records = gCurCRC) noexcept
-{
-	XMLDocument xml;
-	xml.InsertFirstChild(xml.NewDeclaration());
-	xml.SetBOM(true);
-
-	auto const Version = xml.NewElement("Version");
-	xml.InsertEndChild(Version);
-	Version->SetAttribute("Major", APP_VERSION.m_major);
-	Version->SetAttribute("Minor", APP_VERSION.m_minor);
-	Version->SetAttribute("Revision", APP_VERSION.m_revision);
-	Version->SetAttribute("Build", APP_VERSION.m_build);
-	Version->SetAttribute("Julian", BUILD_NUMBER);
-	Version->SetAttribute("Checksum", APP_VERSION.AsInt32());
-
-	auto const Records = xml.NewElement("Records");
-	xml.InsertEndChild(Records);
-
-	auto const t = fmt::gmtime(std::time(nullptr));
-	Records->SetAttribute("GMT", true);
-	Records->SetAttribute("Date", fmt::format("{:%Y-%m-%d}", t).c_str());
-	Records->SetAttribute("Time", fmt::format("{:%H:%M:%S}", t).c_str());
-
-	for (auto&& [key, value] : records)
-		Records->InsertNewChildElement(key.c_str())->SetAttribute("CRC", value);
-
-	xml.SaveFile(save_to.u8string().c_str());
-}
-
-static void LoadCRC2(fs::path const& prev_records = Path::Lang::CRC, sorted_loc_view_t const& MappedSourceTexts = gSortedSourceTexts, crc_result_t* pret = &gCrcCompareResult, fs::path const& LangDir = Path::Lang::Directory, fs::path const& StringsDir = Path::Source::Strings) noexcept
+static void LoadCRC(
+	fs::path const&				prev_records = Path::Lang::CRC,
+	sorted_loc_view_t const&	MappedSourceTexts = gSortedSourceTexts,
+	crc_result_t*				pret = &gCrcCompareResult,
+	fs::path const&				LangDir = Path::Lang::Directory,
+	fs::path const&				StringsDir = Path::Source::Strings
+) noexcept
 {
 	auto const prev_records_str = prev_records.u8string();
 
@@ -488,6 +396,7 @@ static void LoadCRC2(fs::path const& prev_records = Path::Lang::CRC, sorted_loc_
 
 	auto const Records = xml.FirstChildElement("Records");
 	auto const StringFillers = xml.FirstChildElement("StringFillers");
+	uint32_t iCount = 0;
 
 	if (!Records)
 	{
@@ -495,7 +404,7 @@ static void LoadCRC2(fs::path const& prev_records = Path::Lang::CRC, sorted_loc_
 		goto LAB_SKIP_RECORDS;
 	}
 
-	for (auto Record = Records->FirstChildElement(); Record; Record = Record->NextSiblingElement())
+	for (auto Record = Records->FirstChildElement(); Record; Record = Record->NextSiblingElement(), ++iCount)
 	{
 		string_view const szPrevFile{ Record->Attribute("File") };
 		fs::path const PrevFile{ LangDir / szPrevFile };	// no matter whether or not the translation exists, the m_TargetingFile is always pointing to the supposely file.
@@ -533,7 +442,7 @@ static void LoadCRC2(fs::path const& prev_records = Path::Lang::CRC, sorted_loc_
 	}
 LAB_SKIP_RECORDS:;
 
-	for (auto StringFiller = StringFillers->FirstChildElement(); StringFiller; StringFiller = StringFiller->NextSiblingElement())
+	for (auto StringFiller = StringFillers->FirstChildElement(); StringFiller; StringFiller = StringFiller->NextSiblingElement(), ++iCount)
 	{
 		string_view const szPrevFile{ StringFiller->Attribute("File") };
 		fs::path const PrevFile{ StringsDir / szPrevFile };	// however, this one must be based on the english version.
@@ -550,9 +459,16 @@ LAB_SKIP_RECORDS:;
 		if (CurCRC != PrevCRC)
 			fmt::print(Style::Conclusion, "Dirty file: {}\n", szPrevFile);	// that's all we can do - a warning.
 	}
+
+	fmt::print(Style::Positive, "{} CRC record retrieved and compared.\n\n", iCount);
 }
 
-static void SaveCRC2(fs::path const& save_to = Path::Lang::CRC, span<translation_t const> source = gAllSourceTexts, bool bCheckStringFillers = Path::Source::HasStrings, fs::path const& StringFillerFolder = Path::Source::Strings) noexcept
+static void SaveCRC(
+	fs::path const&				save_to = Path::Lang::CRC,
+	span<translation_t const>	source = gAllSourceTexts,
+	bool const					bCheckStringFillers = Path::Source::HasStrings,
+	fs::path const&				StringFillerFolder = Path::Source::Strings
+) noexcept
 {
 	XMLDocument xml;
 	xml.InsertFirstChild(xml.NewDeclaration());
@@ -616,9 +532,6 @@ void PrepareModData() noexcept
 	if (gSortedSourceTexts.empty())
 		gSortedSourceTexts = GetSortedLocView(gAllSourceTexts);
 
-	//GenerateCRC();
-	//LoadCRC(L"test.xml");
-	//SaveCRC(L"test.xml");
-	LoadCRC2(L"test.xml");
-	SaveCRC2(L"test.xml");
+	LoadCRC(L"test.xml");
+	SaveCRC(L"test.xml");
 }
