@@ -23,6 +23,15 @@ using std::wstring_view;
 using cppcoro::generator;
 using cppcoro::recursive_generator;
 
+enum struct EDecision
+{
+	Error,
+	NoOp,
+	Skipped,
+	Patched,
+	Created,
+};
+
 struct translation_t final
 {
 	fs::path m_TargetFile{};
@@ -54,14 +63,13 @@ struct translation_t final
 struct tr_view_t final
 {
 	tr_view_t() noexcept = default;
-	tr_view_t(auto&& TargetFile, auto&& Identifier, auto&& Text) noexcept
-		: m_TargetFile{ std::forward<decltype(TargetFile)>(TargetFile) }, m_Identifier{ std::forward<decltype(Identifier)>(Identifier) }, m_Text{ std::forward<decltype(Text)>(Text) } {}
+	tr_view_t(auto&& TargetFile, auto&& Identifier) noexcept
+		: m_TargetFile{ std::forward<decltype(TargetFile)>(TargetFile) }, m_Identifier{ std::forward<decltype(Identifier)>(Identifier) } {}
 	tr_view_t(translation_t const& t) noexcept
-		: tr_view_t(t.m_TargetFile.native(), t.m_Identifier, t.m_Text) {}
+		: tr_view_t(t.m_TargetFile.native(), t.m_Identifier) {}
 
 	wstring_view m_TargetFile{};
 	string_view m_Identifier{};
-	string_view m_Text{};
 
 	constexpr auto operator<=> (tr_view_t const&) const noexcept = default;
 };
@@ -77,13 +85,13 @@ namespace std
 }
 
 using xmls_t = std::map<fs::path, XMLDocument, std::less<>>;
-using sorted_loc_view_t = std::map<wstring_view, std::map<string_view, string_view, std::less<>>, std::less<>>;
-using crc_result_t = std::unordered_map<tr_view_t, bool>;
+using sorted_loc_view_t = std::map<wstring_view, dict_view_t, std::less<>>;
+using dirty_entries_t = std::unordered_set<tr_view_t>;
 
 inline vector<translation_t> gAllSourceTexts;
 inline sorted_loc_view_t gSortedSourceTexts;
 inline xmls_t gAllLocFiles;
-inline crc_result_t gCrcCompareResult;
+inline dirty_entries_t gDirtyEntries;
 
 inline std::size_t HashCombine(auto&&... vals) noexcept
 {
@@ -109,12 +117,27 @@ inline std::size_t HashCombine(auto&&... vals) noexcept
 
 size_t std::hash<::tr_view_t>::operator()(::tr_view_t const& t) const noexcept
 {
-	return HashCombine(t.m_TargetFile, t.m_Identifier, t.m_Text);
+	return HashCombine(t.m_TargetFile, t.m_Identifier);
 }
 
 void Path::Resolve(string_view path_to_mod, string_view target_lang) noexcept
 {
 	ModDirectory = fs::absolute(path_to_mod);
+
+#ifdef _DEBUG
+	for (auto&& hPath :
+		fs::recursive_directory_iterator(ModDirectory)
+		| std::views::filter([](auto&& elem) noexcept { return !elem.is_directory(); })	// fucking function overloading.
+		| std::views::transform(&fs::directory_entry::path)
+		| std::views::filter([](auto&& elem) noexcept { return elem.stem().native().ends_with(L"_RWPHG_DEBUG"); })	// Windows only.
+		)
+	{
+		fmt::print("Cleaning DEBUG file: {0}\n", fmt::styled(hPath.u8string(), Style::Debug));
+		fs::remove(hPath);
+	}
+
+	fmt::print("\n");
+#endif
 
 	Lang::Directory = ModDirectory / L"Languages" / target_lang;
 	Lang::DefInjected = Lang::Directory / L"DefInjected";
@@ -349,11 +372,111 @@ static sorted_loc_view_t GetSortedLocView(span<translation_t const> source = gAl
 	return ret;
 }
 
-static void CollectAllLocFiles(xmls_t* pret = &gAllLocFiles, sorted_loc_view_t const& SortedLocView = gSortedSourceTexts) noexcept
+static void ProcessXml(XMLDocument* xml, wstring_view wcsFile, dict_view_t const& EnglishTexts, dirty_entries_t const& DirtyEntries = gDirtyEntries, fs::path const& ModDir = Path::ModDirectory) noexcept
+{
+	//	If a file already exists:
+	//		Remove all dirty entries
+	//		Insert all new entries
+	//	Else:
+	//		Insert all entries known
+
+	thread_local static EDecision LastAction = EDecision::NoOp;
+
+	// Couldn't find this entry? Good, it's a new file.
+	auto LanguageData = xml->FirstChildElement("LanguageData");
+
+	// For printing
+	auto const szFile = fs::relative(wcsFile, ModDir).u8string();
+
+	if (LanguageData)
+	{
+		// Sort all entries out.
+
+		std::unordered_set<string_view> existed;
+		vector<XMLElement*> dirty, dead;
+
+		for (auto i = LanguageData->FirstChildElement(); i; i = i->NextSiblingElement())
+		{
+			if (DirtyEntries.contains({ wcsFile, i->Name() }))	// Is dirty?
+				dirty.emplace_back(i);
+			else if (!EnglishTexts.contains(i->Name()))	// A dead entry?
+				dead.emplace_back(i);
+			else
+				existed.emplace(i->Name());	// Entries we are going to keep.
+		}
+
+#pragma region File Conclusion
+		auto const bIsSkipping = dirty.empty() && dead.empty() && existed.size() == EnglishTexts.size();
+		if (bIsSkipping)
+		{
+			fmt::print(Style::Skipping, "{1}Skipping: {0}\n", szFile, LastAction == EDecision::Skipped ? "" : "\n");
+			LastAction = EDecision::Skipped;
+		}
+		else
+		{
+			fmt::print(Style::Action, "\nPatching File: ");
+			fmt::print(Style::Name, "{}\n", szFile);
+			LastAction = EDecision::Patched;
+		}
+#pragma endregion File Conclusion
+
+		// Remove all dirty entries
+
+		for (auto&& entry : dirty)
+		{
+			fmt::print(Style::Info, "Deleting altered entry \"{}\"\n", entry->Name());
+			LanguageData->DeleteChild(entry);
+		}
+
+		for (auto&& entry : dead)
+		{
+			fmt::print(Style::Info, "Removing unreferenced entry \"{}\"\n", entry->Name());
+			LanguageData->DeleteChild(entry);
+		}
+
+		dirty.clear();
+		dead.clear();
+
+		// Insert all new entries
+
+		if (!bIsSkipping)
+		{
+			LanguageData->InsertNewComment(
+				std::format("Generated at: {:%Y-%m-%d}", ch::system_clock::now()).c_str()
+			);
+
+			for (auto&& [entry, text] : EnglishTexts)
+			{
+				if (existed.contains(entry))
+					continue;
+
+				fmt::print(Style::Info, "Inserting entry \"{}\"\n", entry);
+				LanguageData->InsertNewChildElement(entry.data())->SetText(text.data());
+			}
+		}
+	}
+	else
+	{
+		fmt::print(Style::Action, "\nCreating File: ");
+		fmt::print(Style::Name, "{}\n", szFile);
+		LastAction = EDecision::Created;
+
+		LanguageData = xml->NewElement("LanguageData");
+		xml->InsertEndChild(LanguageData);
+
+		for (auto&& [entry, text] : EnglishTexts)
+		{
+			fmt::print(Style::Info, "Inserting entry \"{}\"\n", entry);
+			LanguageData->InsertNewChildElement(entry.data())->SetText(text.data());
+		}
+	}
+}
+
+static void ProcessEveryXml(xmls_t* pret = &gAllLocFiles, sorted_loc_view_t const& SortedLocView = gSortedSourceTexts) noexcept
 {
 	auto& ret = *pret;
 
-	for (auto&& wcsPath : SortedLocView | std::views::keys)
+	for (auto&& [wcsPath, EnglishTexts] : SortedLocView)
 	{
 		auto&& [iter, bNewEntry] = ret.try_emplace(wcsPath);
 		auto&& [hPath, xml] = *iter;
@@ -370,13 +493,22 @@ static void CollectAllLocFiles(xmls_t* pret = &gAllLocFiles, sorted_loc_view_t c
 			xml.InsertFirstChild(xml.NewDeclaration());
 			xml.SetBOM(true);
 		}
+
+		ProcessXml(&xml, wcsPath, EnglishTexts);
+
+#ifdef _DEBUG
+		auto const debug_path = std::format("{}\\{}{}", hPath.parent_path().u8string(), hPath.stem().u8string(), "_RWPHG_DEBUG.xml");
+		xml.SaveFile(debug_path.c_str());
+#else
+		xml.SaveFile(hPath.u8string().c_str());
+#endif
 	}
 }
 
 static void LoadCRC(
 	fs::path const&				prev_records = Path::Lang::CRC,
 	sorted_loc_view_t const&	MappedSourceTexts = gSortedSourceTexts,
-	crc_result_t*				pret = &gCrcCompareResult,
+	dirty_entries_t*			pret = &gDirtyEntries,
 	fs::path const&				LangDir = Path::Lang::Directory,
 	fs::path const&				StringsDir = Path::Source::Strings
 ) noexcept
@@ -397,6 +529,7 @@ static void LoadCRC(
 	auto const Records = xml.FirstChildElement("Records");
 	auto const StringFillers = xml.FirstChildElement("StringFillers");
 	uint32_t iCount = 0;
+	sv_set_t DeadFiles{};	// in case some files get warned like crazy.
 
 	if (!Records)
 	{
@@ -414,7 +547,12 @@ static void LoadCRC(
 		auto const itCurFile = MappedSourceTexts.find(PrevFile);
 		if (itCurFile == MappedSourceTexts.cend())
 		{
-			fmt::print(Style::Info, "Dead file: {}\n", szPrevFile);
+			if (!DeadFiles.contains(szPrevFile))
+			{
+				fmt::print(Style::Info, "Dead file: {}\n", szPrevFile);
+				DeadFiles.emplace(szPrevFile);
+			}
+
 			continue;
 		}
 
@@ -435,11 +573,10 @@ static void LoadCRC(
 			// The compare result view must be built on top of current identifier.
 			// 1. the object lifetime of prev series is about the end.
 			// 2. we are going to searching with current text.
-			pret->try_emplace({ itCurFile->first, itCurIdentifier->first, itCurIdentifier->second }, false);
+			pret->emplace(itCurFile->first, itCurIdentifier->first);
 		}
-		else
-			pret->try_emplace({ itCurFile->first, itCurIdentifier->first, itCurIdentifier->second }, true);
 	}
+
 LAB_SKIP_RECORDS:;
 
 	for (auto StringFiller = StringFillers->FirstChildElement(); StringFiller; StringFiller = StringFiller->NextSiblingElement(), ++iCount)
@@ -450,7 +587,7 @@ LAB_SKIP_RECORDS:;
 
 		if (!fs::exists(PrevFile))
 		{
-			fmt::print(Style::Info, "Dead file: {}\n", szPrevFile);
+			fmt::print(Style::Info, "File removed in current version: {}\n", szPrevFile);
 			continue;
 		}
 
@@ -460,7 +597,7 @@ LAB_SKIP_RECORDS:;
 			fmt::print(Style::Conclusion, "Dirty file: {}\n", szPrevFile);	// that's all we can do - a warning.
 	}
 
-	fmt::print(Style::Positive, "{} CRC record retrieved and compared.\n\n", iCount);
+	fmt::print(Style::Positive, "{} CRC record{} retrieved and compared.\n\n", iCount, iCount < 2 ? "" : "s");
 }
 
 static void SaveCRC(
@@ -532,6 +669,11 @@ void PrepareModData() noexcept
 	if (gSortedSourceTexts.empty())
 		gSortedSourceTexts = GetSortedLocView(gAllSourceTexts);
 
-	LoadCRC(L"test.xml");
-	SaveCRC(L"test.xml");
+	LoadCRC();
+	ProcessEveryXml();
+	SaveCRC(
+#ifdef _DEBUG
+		Path::Lang::Directory / L"CRC_RWPHG_DEBUG.XML"
+#endif
+	);
 }
