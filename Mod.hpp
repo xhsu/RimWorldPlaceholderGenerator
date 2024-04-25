@@ -6,6 +6,10 @@
 #include <filesystem>
 #endif
 
+#ifndef _OPTIONAL_
+#include <optional>
+#endif
+
 #ifndef _RANGES_
 #include <ranges>
 #endif
@@ -30,11 +34,8 @@ namespace Path
 
 	namespace Source
 	{
-		inline path Keyed;		// Dir
-		inline bool HasKeyed = false;
-
-		inline path Strings;	// Dir
-		inline bool HasStrings = false;
+		inline std::optional<path> Keyed;	// Dir;
+		inline std::optional<path> Strings;	// Dir;
 	}
 
 	void Resolve(std::string_view path_to_mod, std::string_view target_lang) noexcept;
@@ -59,3 +60,5 @@ inline void CheckStringForXML(std::string* s) noexcept
 			c = '_';
 	}
 }
+
+extern void ProcessMod() noexcept;

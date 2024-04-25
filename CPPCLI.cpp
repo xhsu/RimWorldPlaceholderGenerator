@@ -309,14 +309,13 @@ static Assembly^ LoadUnityEngine(String^ eng_dir)
 	return nullptr;
 }
 
-[[nodiscard]]
-classinfo_dict_t GetModClasses(const char* path_to_mod)
+void GetModClasses(const char* path_to_mod, classinfo_dict_t* pret)
 {
 	cliglb::PathResolution(path_to_mod);
 	auto asm_dir = Path::GetFullPath(Path::Combine(cliglb::ModPath, L"Assemblies/"));
 
 	if (!Directory::Exists(asm_dir))
-		return {};
+		return;
 
 	auto RimWorld = LoadUnityEngine(cliglb::EnginePath);
 	auto tTypeofDef = RimWorld->GetType("Verse.Def");
@@ -324,16 +323,14 @@ classinfo_dict_t GetModClasses(const char* path_to_mod)
 	LoadAssembly(Path::Combine(cliglb::WorkshopPath, gcnew String(HUGSLIB)), true);
 	LoadAssembly(Path::Combine(cliglb::WorkshopPath, gcnew String(HARMONY)), true);
 
-	classinfo_dict_t ret{};
+	// classinfo_dict_t ret{};
 	auto assemblies = LoadAllAssemblyFromDir(asm_dir);
 	for each (auto assembly in assemblies)
-		GetModClasses(assembly, tTypeofDef, &ret);
+		GetModClasses(assembly, tTypeofDef, pret);
 
 	fmt::print(
 		Style::Positive,
-		"{0} types loaded from mod.\n", ret.size()
+		"{0} types loaded from mod.\n", pret->size()
 	);
 	fmt::println("");
-
-	return ret;
 }

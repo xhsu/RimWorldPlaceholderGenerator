@@ -45,15 +45,14 @@ inline constexpr array g_rgszAutoCompleteLanguages =
 	"Ukrainian"sv,
 };
 
-extern void GenerateDummyForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
-extern void GenerateCrcRecordForMod(fs::path const& hModFolder, string_view szLanguage) noexcept;
-extern void InspectDuplicatedOriginalText(fs::path const& hModFolder) noexcept;
-extern void PrepareModData() noexcept;
 
-static int Execute(fs::path const& hModPath, string_view szLanguage) noexcept
+static void Execute(const char* path_to_mod, string_view target_lang) noexcept
 {
+	GetModClasses(path_to_mod, &gModClasses);
+	gAllNamespaces.insert_range(gModClasses | std::views::values | std::views::transform(&class_info_t::m_Namespace));
 
-	return EXIT_SUCCESS;
+	Path::Resolve(path_to_mod, target_lang);
+	ProcessMod();
 }
 
 int main(int argc, char *argv[]) noexcept
@@ -76,7 +75,6 @@ int main(int argc, char *argv[]) noexcept
 			return EXIT_SUCCESS;
 		}
 
-		gModClasses = GetModClasses(argv[1]);
 		fmt::print(Style::Info, "Selected mod path: {}\n", argv[1]);
 		fmt::print("Input target language.\n");
 
@@ -105,11 +103,7 @@ int main(int argc, char *argv[]) noexcept
 #ifndef _DEBUG
 		std::this_thread::sleep_for(1s);
 #endif
-
-		Path::Resolve(argv[1], sz);
-		InspectDuplicatedOriginalText(argv[1]);
-		GenerateDummyForMod(argv[1], sz);
-		GenerateCrcRecordForMod(argv[1], sz);
+		Execute(argv[1], sz);
 
 #ifndef _DEBUG
 		fmt::print(Style::Positive, "\nDONE.\nPress Enter to exit.");
@@ -119,19 +113,12 @@ int main(int argc, char *argv[]) noexcept
 	}
 
 	case 3:
-		gModClasses = GetModClasses(argv[1]);
-		gAllNamespaces.insert_range(gModClasses | std::views::values | std::views::transform(&class_info_t::m_Namespace));
-		Path::Resolve(argv[1], argv[2]);
-
-		PrepareModData();
 		fmt::print(Style::Info, "Selected mod path: {}\n", argv[1]);
 		fmt::print(Style::Info, "Selected language: {}\n\n", argv[2]);
 #ifndef _DEBUG
 		std::this_thread::sleep_for(1s);
 #endif
-		//InspectDuplicatedOriginalText(argv[1]);
-		GenerateDummyForMod(argv[1], argv[2]);
-		GenerateCrcRecordForMod(argv[1], argv[2]);
+		Execute(argv[1], argv[2]);
 
 #ifndef _DEBUG
 		fmt::print(Style::Positive, "\nDONE.\nPress Enter to exit.");

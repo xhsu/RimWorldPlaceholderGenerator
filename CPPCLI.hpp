@@ -50,6 +50,18 @@ struct sv_less_t final
 	{
 		return lhs < rhs;
 	}
+
+	[[nodiscard]]	/*#UPDATE_AT_CPP23 static*/
+	constexpr auto operator() (std::wstring_view&& lhs, std::wstring_view&& rhs) const noexcept
+	{
+		return lhs < rhs;
+	}
+
+	[[nodiscard]]	/*#UPDATE_AT_CPP23 static*/
+	constexpr auto operator() (std::wstring_view const& lhs, std::wstring_view const& rhs) const noexcept
+	{
+		return lhs < rhs;
+	}
 };
 
 using str_set_t = std::set<std::string, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_set
@@ -78,5 +90,4 @@ struct class_info_t final
 
 using classinfo_dict_t = std::map<std::string, class_info_t, sv_less_t>;	// #UPDATE_AT_CPP23 std::flat_map
 
-[[nodiscard]]
-extern classinfo_dict_t GetModClasses(const char* path_to_mod);
+extern void GetModClasses(const char* path_to_mod, classinfo_dict_t* pret);

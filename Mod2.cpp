@@ -13,6 +13,7 @@ namespace ch = std::chrono;
 
 using std::array;
 using std::function;
+using std::optional;
 using std::pair;
 using std::span;
 using std::string;
@@ -87,11 +88,13 @@ namespace std
 using xmls_t = std::map<fs::path, XMLDocument, std::less<>>;
 using sorted_loc_view_t = std::map<wstring_view, dict_view_t, std::less<>>;
 using dirty_entries_t = std::unordered_set<tr_view_t>;
+using txt_crc_dict_t = std::map<fs::path, uint64_t, std::less<>>;
 
 inline vector<translation_t> gAllSourceTexts;
 inline sorted_loc_view_t gSortedSourceTexts;
 inline xmls_t gAllLocFiles;
 inline dirty_entries_t gDirtyEntries;
+inline txt_crc_dict_t gStringFillerCRC;
 
 inline std::size_t HashCombine(auto&&... vals) noexcept
 {
@@ -122,6 +125,16 @@ size_t std::hash<::tr_view_t>::operator()(::tr_view_t const& t) const noexcept
 
 void Path::Resolve(string_view path_to_mod, string_view target_lang) noexcept
 {
+	static constexpr auto fnSetupOptional =
+		[](std::optional<path>& op, path&& obj) noexcept /*static #UPDATE_AT_CPP23*/
+		{
+			op.reset();
+			if (!fs::exists(obj) || !fs::is_directory(obj))
+				return;
+
+			op.emplace(std::forward<path>(obj));
+		};
+
 	ModDirectory = fs::absolute(path_to_mod);
 
 #ifdef _DEBUG
@@ -145,10 +158,8 @@ void Path::Resolve(string_view path_to_mod, string_view target_lang) noexcept
 	Lang::Strings = Lang::Directory / L"Strings";
 	Lang::CRC = Lang::Directory / L"CRC.RWPHG";
 
-	Source::Keyed = ModDirectory / L"Languages" / L"English" / L"Keyed";
-	Source::HasKeyed = fs::exists(Source::Keyed) && fs::is_directory(Source::Keyed);
-	Source::Strings = ModDirectory / L"Languages" / L"English" / L"Strings";
-	Source::HasStrings = fs::exists(Source::Strings) && fs::is_directory(Source::Strings);
+	fnSetupOptional(Source::Keyed, ModDirectory / L"Languages" / L"English" / L"Keyed");
+	fnSetupOptional(Source::Strings, ModDirectory / L"Languages" / L"English" / L"Strings");
 }
 
 fs::path Path::RelativeToLang(fs::path const& hPath) noexcept
@@ -198,7 +209,7 @@ static string GetClassFolderName(class_info_t const& info) noexcept
 //	Remove altered entries from existing translations.
 
 [[nodiscard]]
-static generator<fs::path> GetAllXmlSourceFiles(fs::path const& hModFolder) noexcept
+static generator<fs::path> GetAllXmlSourceFiles(fs::path const& hModFolder = Path::ModDirectory, optional<fs::path> const& pKeyedEntry = Path::Source::Keyed) noexcept
 {
 	// DefInjected
 	for (auto&& hPath :
@@ -212,10 +223,10 @@ static generator<fs::path> GetAllXmlSourceFiles(fs::path const& hModFolder) noex
 	}
 
 	// Keyed
-	if (auto const hKeyedEntry = hModFolder / L"Languages" / L"English" / L"Keyed"; fs::exists(hKeyedEntry))
+	if (pKeyedEntry)
 	{
 		for (auto&& hPath :
-			fs::recursive_directory_iterator(hKeyedEntry)
+			fs::recursive_directory_iterator(*pKeyedEntry)
 			| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
 			| std::views::transform(&fs::directory_entry::path)
 			| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".xml") == 0; })
@@ -347,9 +358,9 @@ static recursive_generator<translation_t> ExtractAllEntriesFromFile(fs::path con
 }
 
 [[nodiscard]]
-static recursive_generator<translation_t> GetAllTranslationEntries(fs::path const& hModFolder) noexcept
+static recursive_generator<translation_t> GetAllTranslationEntries() noexcept
 {
-	for (auto&& file : GetAllXmlSourceFiles(hModFolder))
+	for (auto&& file : GetAllXmlSourceFiles())
 		co_yield ExtractAllEntriesFromFile(file);
 }
 
@@ -509,8 +520,9 @@ static void LoadCRC(
 	fs::path const&				prev_records = Path::Lang::CRC,
 	sorted_loc_view_t const&	MappedSourceTexts = gSortedSourceTexts,
 	dirty_entries_t*			pret = &gDirtyEntries,
+	txt_crc_dict_t*				txt_crc_dict = &gStringFillerCRC,
 	fs::path const&				LangDir = Path::Lang::Directory,
-	fs::path const&				StringsDir = Path::Source::Strings
+	optional<fs::path> const&	pStringsDir = Path::Source::Strings
 ) noexcept
 {
 	auto const prev_records_str = prev_records.u8string();
@@ -579,32 +591,36 @@ static void LoadCRC(
 
 LAB_SKIP_RECORDS:;
 
-	for (auto StringFiller = StringFillers->FirstChildElement(); StringFiller; StringFiller = StringFiller->NextSiblingElement(), ++iCount)
+	if (pStringsDir)
 	{
-		string_view const szPrevFile{ StringFiller->Attribute("File") };
-		fs::path const PrevFile{ StringsDir / szPrevFile };	// however, this one must be based on the english version.
-		uint64_t const PrevCRC{ StringFiller->Unsigned64Attribute("CRC") };
-
-		if (!fs::exists(PrevFile))
+		if (!StringFillers)
 		{
-			fmt::print(Style::Info, "File removed in current version: {}\n", szPrevFile);
-			continue;
+			fmt::print(Style::Warning, "Bad record file: missing entry 'StringFillers'.\n");
+			goto LAB_END;
 		}
 
-		auto const CurCRC = CRC64::CheckFile(PrevFile.c_str());
-
-		if (CurCRC != PrevCRC)
-			fmt::print(Style::Conclusion, "Dirty file: {}\n", szPrevFile);	// that's all we can do - a warning.
+		for (auto StringFiller = StringFillers->FirstChildElement(); StringFiller; StringFiller = StringFiller->NextSiblingElement(), ++iCount)
+		{
+			txt_crc_dict->try_emplace(
+				*pStringsDir / StringFiller->Attribute("File"),
+				StringFiller->Unsigned64Attribute("CRC")
+			);
+		}
+	}
+	else if (!pStringsDir && StringFillers)
+	{
+		fmt::print(Style::Warning, "String filler records found, but no string filler exists in current version anymore.\n");
+		goto LAB_END;
 	}
 
+LAB_END:;
 	fmt::print(Style::Positive, "{} CRC record{} retrieved and compared.\n\n", iCount, iCount < 2 ? "" : "s");
 }
 
 static void SaveCRC(
 	fs::path const&				save_to = Path::Lang::CRC,
 	span<translation_t const>	source = gAllSourceTexts,
-	bool const					bCheckStringFillers = Path::Source::HasStrings,
-	fs::path const&				StringFillerFolder = Path::Source::Strings
+	optional<fs::path> const&	pStringFillerFolder = Path::Source::Strings
 ) noexcept
 {
 	XMLDocument xml;
@@ -642,10 +658,10 @@ static void SaveCRC(
 	auto const StringFillers = xml.NewElement("StringFillers");
 	xml.InsertEndChild(StringFillers);
 
-	if (bCheckStringFillers)
+	if (pStringFillerFolder)
 	{
 		for (auto&& hPath :
-			fs::recursive_directory_iterator(StringFillerFolder)
+			fs::recursive_directory_iterator(*pStringFillerFolder)
 			| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
 			| std::views::transform(&fs::directory_entry::path)
 			| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".txt") == 0; })
@@ -653,7 +669,7 @@ static void SaveCRC(
 		{
 			auto const StringFiller = StringFillers->InsertNewChildElement("StringFiller");
 
-			StringFiller->SetAttribute("File", fs::relative(hPath, StringFillerFolder).u8string().c_str());
+			StringFiller->SetAttribute("File", fs::relative(hPath, *pStringFillerFolder).u8string().c_str());
 			StringFiller->SetAttribute("CRC", CRC64::CheckFile(hPath.c_str()));
 		}
 	}
@@ -661,16 +677,72 @@ static void SaveCRC(
 	xml.SaveFile(save_to.u8string().c_str());
 }
 
-void PrepareModData() noexcept
+static void ProcessEveryTxt(optional<fs::path> const& pStringFillerSourceDir = Path::Source::Strings, fs::path const& StringFillerDestDir = Path::Lang::Strings, txt_crc_dict_t const& dict = gStringFillerCRC) noexcept
+{
+	if (!pStringFillerSourceDir)
+		return;
+
+	bool bEndingSentence = true;
+	fmt::print(Style::Action, "\nInspecting all string filler files...\n");
+
+	// Handle deletion and alteration.
+	for (auto&& [PrevFile, PrevCRC] : dict)
+	{
+		auto const szPrevFile = fs::relative(PrevFile, *pStringFillerSourceDir).u8string();
+
+		if (!fs::exists(PrevFile))
+		{
+			bEndingSentence = false;
+			fmt::print(Style::Info, "File removed in current version: {}\n", fmt::styled(szPrevFile, Style::Name));
+
+			if (fs::exists(Path::Lang::Strings / szPrevFile))
+				fmt::print(Style::Skipping, "\tIt is also suggested to remove the corresponding file from your localization folder.\n");
+
+			continue;
+		}
+
+		auto const CurCRC = CRC64::CheckFile(PrevFile.c_str());
+
+		if (CurCRC != PrevCRC)
+		{
+			bEndingSentence = false;
+			fmt::print(Style::Info, "Dirty file: {}\n", fmt::styled(szPrevFile, Style::Name));	// that's all we can do - a warning.
+		}
+	}
+
+	// Handle the additions.
+	for (auto&& hPath :
+		fs::recursive_directory_iterator(*pStringFillerSourceDir)
+		| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
+		| std::views::transform(&fs::directory_entry::path)
+		| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".txt") == 0; })
+		)
+	{
+		auto const RelPath = fs::relative(hPath, *pStringFillerSourceDir).u8string();
+		auto const Corresponding = StringFillerDestDir / RelPath;
+
+		if (!fs::exists(Corresponding))
+		{
+			bEndingSentence = false;
+			fmt::print(Style::Info, "File without corresponding localization: {}\n", fmt::styled(RelPath, Style::Name));
+		}
+	}
+
+	if (bEndingSentence)
+		fmt::print(Style::Positive, "Inspection finished without any notable info. (Up-to-date)\n");
+}
+
+void ProcessMod() noexcept
 {
 	if (gAllSourceTexts.empty())
-		gAllSourceTexts = GetAllTranslationEntries(Path::ModDirectory) | std::ranges::to<vector>();
+		gAllSourceTexts = GetAllTranslationEntries() | std::ranges::to<vector>();
 
 	if (gSortedSourceTexts.empty())
-		gSortedSourceTexts = GetSortedLocView(gAllSourceTexts);
+		gSortedSourceTexts = GetSortedLocView();
 
 	LoadCRC();
 	ProcessEveryXml();
+	ProcessEveryTxt();
 	SaveCRC(
 #ifdef _DEBUG
 		Path::Lang::Directory / L"CRC_RWPHG_DEBUG.XML"
