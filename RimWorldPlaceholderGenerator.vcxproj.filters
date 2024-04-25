@@ -30,16 +30,13 @@
     <ClCompile Include="Application.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Mod.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="CPPCLI.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Precompiled.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Mod2.cpp">
+    <ClCompile Include="Mod.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
