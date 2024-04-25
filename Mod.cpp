@@ -201,6 +201,7 @@ static string GetClassFolderName(class_info_t const& info) noexcept
 	return szFullName;
 }
 
+// Placeholder Generator:
 //	Get all english texts
 //	Generate current CRC
 //	Get all CRC in record
@@ -242,11 +243,10 @@ static generator<fs::path> GetAllXmlSourceFiles(fs::path const& hModFolder = Pat
 [[nodiscard]]
 static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 	string szPrevIdentifier, string_view szTypeName, wstring_view szFileName, XMLElement* def,
+	optional<string>&& FolderOverride = std::nullopt/* for list elems as they are meant to place in same folder as their declarer */,
 	fs::path const& DefInjected = Path::Lang::DefInjected
 ) noexcept
 {
-	// #TODO no global vars involved?
-
 	auto const pClassInfo = SearchClassName(szTypeName);
 
 	for (auto field = def->FirstChildElement(); field; field = field->NextSiblingElement())
@@ -268,10 +268,21 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 			}
 			else
 			{
-				co_yield{
-					DefInjected / GetClassFolderName(*pClassInfo) / szFileName,
-					std::move(szThisIdentifier), field->GetText(),
-				};
+				if (!FolderOverride)
+				{
+					co_yield{
+						DefInjected / GetClassFolderName(*pClassInfo) / szFileName,
+						std::move(szThisIdentifier), field->GetText(),
+					};
+				}
+				else
+				{
+					co_yield{
+						DefInjected / *FolderOverride / szFileName,
+						std::move(szThisIdentifier), field->GetText(),
+					};
+				}
+
 			}
 		}
 
@@ -313,7 +324,10 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 					std::format("{}.{}", szThisIdentifier, idx),
 					iter->second,
 					szFileName,
-					li
+					li,
+
+					// The object in List<> must kept in same file as its declarer.
+					optional<string>{ std::in_place, GetClassFolderName(*pClassInfo), }
 				);
 			}
 		}
@@ -328,7 +342,7 @@ static recursive_generator<translation_t> ExtractAllEntriesFromFile(fs::path con
 	XMLDocument xml;
 	xml.LoadFile(file.u8string().c_str());
 
-	auto const szFileName = file.filename().native();
+	auto const szFileName = fs::_Parse_filename(file.native());
 
 	// DefInjected
 	for (auto defs = xml.FirstChildElement("Defs"); defs; defs = defs->NextSiblingElement("Defs"))
@@ -349,9 +363,11 @@ static recursive_generator<translation_t> ExtractAllEntriesFromFile(fs::path con
 			entry != nullptr;
 			entry = entry->NextSiblingElement())
 		{
+			auto const pszText = entry->GetText();
+
 			co_yield{
 				Keyed / szFileName,
-				entry->Name(), entry->GetText(),
+				entry->Name(), pszText == nullptr ? "" : pszText,
 			};
 		}
 	}
@@ -748,4 +764,30 @@ void ProcessMod() noexcept
 		Path::Lang::Directory / L"CRC_RWPHG_DEBUG.XML"
 #endif
 	);
+}
+
+// noxref mode:
+//	Get all source files
+//	iterate all translation file and see whether they are needed
+
+void NoXRef() noexcept
+{
+	if (gAllSourceTexts.empty())
+		gAllSourceTexts = GetAllTranslationEntries() | std::ranges::to<vector>();
+
+	if (gSortedSourceTexts.empty())
+		gSortedSourceTexts = GetSortedLocView();
+
+	for (auto&& hPath :
+		fs::recursive_directory_iterator(Path::Lang::Directory)
+		| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
+		| std::views::transform(&fs::directory_entry::path)
+		| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".xml") == 0; })
+		)
+	{
+		if (gSortedSourceTexts.contains(hPath.native()))
+			continue;
+
+		fmt::print("{}\n", hPath.u8string());
+	}
 }

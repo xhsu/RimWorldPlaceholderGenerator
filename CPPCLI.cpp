@@ -49,6 +49,7 @@ public:
 
 public:
 	static String^ ModPath = nullptr;
+	static String^ ModsPath = nullptr;
 	static String^ EnginePath = nullptr;
 	static String^ WorkshopPath = nullptr;
 
@@ -57,30 +58,33 @@ public:
 		ModPath = gcnew String(mod);
 
 		// Is loading mod from RimWorld/mods?
+		ModsPath = Path::GetFullPath(Path::Combine(ModPath, "../../"));
 		EnginePath = Path::GetFullPath(Path::Combine(ModPath, gcnew String(ENGINE_REL_PATH)));
 		WorkshopPath = Path::GetFullPath(Path::Combine(ModPath, gcnew String(WORKSHOP_REL_PATH)));
 
-		if (Directory::Exists(EnginePath) && Directory::Exists(WorkshopPath))
+		if (Directory::Exists(ModsPath) && Directory::Exists(EnginePath) && Directory::Exists(WorkshopPath))
 		{
 			Console::WriteLine("Path resolution: Mod was placed in RimWorld/Mods/");
 			return;
 		}
 
 		// In Workshop?
+		ModsPath = Path::GetFullPath(Path::Combine(ModPath, "../../../../../common/RimWorld/Mods/"));
 		EnginePath = Path::GetFullPath(Path::Combine(ModPath, "../../../../../common/RimWorld/RimWorldWin64_Data/Managed/"));
 		WorkshopPath = Path::GetFullPath(Path::Combine(ModPath, "../../../"));
 
-		if (Directory::Exists(EnginePath) && Directory::Exists(WorkshopPath))
+		if (Directory::Exists(ModsPath) && Directory::Exists(EnginePath) && Directory::Exists(WorkshopPath))
 		{
 			Console::WriteLine("Path resolution: Mod was placed in Steam/Workshop/Content/294100/");
 			return;
 		}
 
 #ifdef _DEBUG
+		ModsPath = Path::GetFullPath("D:\\SteamLibrary\\steamapps\\common\\RimWorld\\Mods");
 		EnginePath = Path::GetFullPath("D:\\SteamLibrary\\steamapps\\common\\RimWorld\\RimWorldWin64_Data\\Managed\\");
 		WorkshopPath = Path::GetFullPath("D:\\SteamLibrary\\steamapps\\workshop\\content\\294100\\");
 
-		if (Directory::Exists(EnginePath) && Directory::Exists(WorkshopPath))
+		if (Directory::Exists(ModsPath) && Directory::Exists(EnginePath) && Directory::Exists(WorkshopPath))
 		{
 			Console::WriteLine("Path resolution: DEBUG_MODE - ABSOLUTE PATH ASSIGNED");
 			return;

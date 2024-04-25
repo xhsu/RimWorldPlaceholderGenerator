@@ -126,8 +126,24 @@ int main(int argc, char *argv[]) noexcept
 #endif
 		return EXIT_SUCCESS;
 
+	case 4:
+	{
+		string_view const szCommand{ argv[3] };
+
+		if (szCommand == "-noxref")
+		{
+			Path::Resolve(argv[1], argv[2]);
+			NoXRef();
+		}
+		else
+		{
+			fmt::print(Style::Error, "Unknown command: \"{}\"", szCommand);
+		}
+
+		return EXIT_SUCCESS;
+	}
 	default:
-		fmt::print("Too many arguments.\nExpected: 1 or 2, but {} received.\n", argc - 1);
+		fmt::print("Too many arguments.\nExpected: 1, 2 or 3, but {} received.\n", argc - 1);
 		while (std::cin.get() != '\n') {}
 		return EXIT_SUCCESS;
 	}
