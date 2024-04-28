@@ -73,7 +73,6 @@ export bool CommandLineWrapper(string_view desc, span<string_view const> expecte
 	if ((diff < 0 && !bIsVariadic) || diff > iOptionalArgCount)
 	{
 		fmt::print(Style::Error, R"(Expected argument count for command "{}" is {}, but {} received.)" "\n", expected[0], iExpectedArgCount - 1, iReceivedArgCount - 1);
-		//fmt::print(Style::Info, R"(	Example usage: "{}")" "\n", fmt::join(expected, R"(", ")"));
 
 		string underscore{};
 
