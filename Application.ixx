@@ -85,7 +85,7 @@ export inline constexpr auto BUILD_NUMBER = LocalBuildNumber();
 export inline constexpr app_version_t APP_VERSION
 {
 	.m_major = 1,
-	.m_minor = 2,
+	.m_minor = 3,
 	.m_revision = 0,
 	.m_build = static_cast<uint8_t>(BUILD_NUMBER % 255),
 };

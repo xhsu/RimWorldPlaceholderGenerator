@@ -213,6 +213,9 @@ static void GetModClasses(Assembly^ dll, Type^ tTypeofDef, classinfo_dict_t* pre
 	// https://stackoverflow.com/questions/1091853/error-message-unable-to-load-one-or-more-of-the-requested-types-retrieve-the-l
 	catch (ReflectionTypeLoadException^ ex)
 	{
+		fmt::print(Style::Error, "[::GetModClasses] Error encountered when parsing assembly '{}'", cli_to_stl(dll->GetName()->Name));
+		fmt::print(Style::Info, "\n");
+
 		auto sb = gcnew StringBuilder();
 
 		for each(auto exSub in ex->LoaderExceptions)
@@ -328,7 +331,7 @@ void GetModClasses(const char* path_to_mod, classinfo_dict_t* pret)
 	LoadAssembly(Path::Combine(cliglb::WorkshopPath, gcnew String(HARMONY)), true);
 
 	// classinfo_dict_t ret{};
-	auto assemblies = LoadAllAssemblyFromDir(asm_dir);
+	auto assemblies = LoadAllAssemblyFromDir(cliglb::ModPath);	// perhaps all modules rather than stuff in "Assemblies/"?
 	for each (auto assembly in assemblies)
 		GetModClasses(assembly, tTypeofDef, pret);
 

@@ -3,6 +3,7 @@
 
 import Application;
 import CRC64;
+import HashExtension;
 import Style;
 
 using namespace tinyxml2;
@@ -88,7 +89,7 @@ namespace std
 using xmls_t = std::map<fs::path, XMLDocument, std::less<>>;
 using sorted_loc_view_t = std::map<wstring_view, dict_view_t, std::less<>>;
 using dirty_entries_t = std::unordered_set<tr_view_t>;
-using txt_crc_dict_t = std::map<fs::path, uint64_t, std::less<>>;
+using txt_crc_dict_t = std::map<fs::path, uint64_t, sv_iless_t>;
 
 inline vector<translation_t> gAllSourceTexts;
 inline sorted_loc_view_t gSortedSourceTexts;
@@ -96,26 +97,13 @@ inline xmls_t gAllLocFiles;
 inline dirty_entries_t gDirtyEntries;
 inline txt_crc_dict_t gStringFillerCRC;
 
-inline std::size_t HashCombine(auto&&... vals) noexcept
+inline void ResetGlobals() noexcept
 {
-	// Ref: https://stackoverflow.com/questions/4948780/magic-number-in-boosthash-combine
-	constexpr std::size_t UINT_MAX_OVER_PHI =
-#ifdef _M_X64
-		0x9e3779b97f4a7c16;
-#else
-		0x9e3779b9;
-#endif
-
-	std::size_t ret = 0;
-	auto const functors = std::tuple{ std::hash<std::remove_cvref_t<decltype(vals)>>{}... };
-
-	[&] <size_t... I>(std::index_sequence<I...>&&)
-	{
-		((ret ^= std::get<I>(functors)(vals) + UINT_MAX_OVER_PHI + (ret << 6) + (ret >> 2)), ...);
-	}
-	(std::index_sequence_for<decltype(vals)...>{});
-
-	return ret;
+	gAllSourceTexts.clear();
+	gSortedSourceTexts.clear();
+	gAllLocFiles.clear();
+	gDirtyEntries.clear();
+	gStringFillerCRC.clear();
 }
 
 size_t std::hash<::tr_view_t>::operator()(::tr_view_t const& t) const noexcept
@@ -126,7 +114,7 @@ size_t std::hash<::tr_view_t>::operator()(::tr_view_t const& t) const noexcept
 void Path::Resolve(string_view path_to_mod, string_view target_lang) noexcept
 {
 	static constexpr auto fnSetupOptional =
-		[](std::optional<path>& op, path&& obj) noexcept /*static #UPDATE_AT_CPP23*/
+		+[](std::optional<path>& op, path&& obj) noexcept /*static #UPDATE_AT_CPP23*/
 		{
 			op.reset();
 			if (!fs::exists(obj) || !fs::is_directory(obj))
@@ -138,18 +126,7 @@ void Path::Resolve(string_view path_to_mod, string_view target_lang) noexcept
 	ModDirectory = fs::absolute(path_to_mod);
 
 #ifdef _DEBUG
-	for (auto&& hPath :
-		fs::recursive_directory_iterator(ModDirectory)
-		| std::views::filter([](auto&& elem) noexcept { return !elem.is_directory(); })	// fucking function overloading.
-		| std::views::transform(&fs::directory_entry::path)
-		| std::views::filter([](auto&& elem) noexcept { return elem.stem().native().ends_with(L"_RWPHG_DEBUG"); })	// Windows only.
-		)
-	{
-		fmt::print("Cleaning DEBUG file: {0}\n", fmt::styled(hPath.u8string(), Style::Debug));
-		fs::remove(hPath);
-	}
-
-	fmt::print("\n");
+	ClearDebugFiles();
 #endif
 
 	Lang::Directory = ModDirectory / L"Languages" / target_lang;
@@ -167,6 +144,22 @@ fs::path Path::RelativeToLang(fs::path const& hPath) noexcept
 	static std::error_code ec{};
 
 	return fs::relative(hPath, Lang::Directory, ec);
+}
+
+void Path::ClearDebugFiles() noexcept
+{
+	for (auto&& hPath :
+		fs::recursive_directory_iterator(ModDirectory)
+		| std::views::filter([](auto&& elem) noexcept { return !elem.is_directory(); })	// fucking function overloading.
+		| std::views::transform(&fs::directory_entry::path)
+		| std::views::filter([](auto&& elem) noexcept { return elem.stem().native().ends_with(L"_RWPHG_DEBUG"); })	// Windows only.
+		)
+	{
+		fmt::print("Cleaning DEBUG file: {0}\n", fmt::styled(hPath.u8string(), Style::Debug));
+		fs::remove(hPath);
+	}
+
+	fmt::print("\n");
 }
 
 [[nodiscard]]
@@ -399,7 +392,8 @@ static sorted_loc_view_t GetSortedLocView(span<translation_t const> source = gAl
 	return ret;
 }
 
-static void ProcessXml(XMLDocument* xml, wstring_view wcsFile, dict_view_t const& EnglishTexts, dirty_entries_t const& DirtyEntries = gDirtyEntries, fs::path const& ModDir = Path::ModDirectory) noexcept
+[[nodiscard]]
+static EDecision ProcessXml(XMLDocument* xml, wstring_view wcsFile, dict_view_t const& EnglishTexts, dirty_entries_t const& DirtyEntries = gDirtyEntries, fs::path const& ModDir = Path::ModDirectory) noexcept
 {
 	//	If a file already exists:
 	//		Remove all dirty entries
@@ -497,6 +491,8 @@ static void ProcessXml(XMLDocument* xml, wstring_view wcsFile, dict_view_t const
 			LanguageData->InsertNewChildElement(entry.data())->SetText(text.data());
 		}
 	}
+
+	return LastAction;
 }
 
 static void ProcessEveryXml(xmls_t* pret = &gAllLocFiles, sorted_loc_view_t const& SortedLocView = gSortedSourceTexts) noexcept
@@ -521,14 +517,22 @@ static void ProcessEveryXml(xmls_t* pret = &gAllLocFiles, sorted_loc_view_t cons
 			xml.SetBOM(true);
 		}
 
-		ProcessXml(&xml, wcsPath, EnglishTexts);
-
+		switch (ProcessXml(&xml, wcsPath, EnglishTexts))
+		{
+		case EDecision::Created:
+		case EDecision::Patched:
 #ifdef _DEBUG
-		auto const debug_path = std::format("{}\\{}{}", hPath.parent_path().u8string(), hPath.stem().u8string(), "_RWPHG_DEBUG.xml");
-		xml.SaveFile(debug_path.c_str());
+			xml.SaveFile(
+				std::format("{}\\{}{}", hPath.parent_path().u8string(), hPath.stem().u8string(), "_RWPHG_DEBUG.xml").c_str()
+			);
 #else
-		xml.SaveFile(hPath.u8string().c_str());
+			xml.SaveFile(hPath.u8string().c_str());
 #endif
+			break;
+
+		default:
+			break;
+		}
 	}
 }
 
@@ -750,6 +754,8 @@ static void ProcessEveryTxt(optional<fs::path> const& pStringFillerSourceDir = P
 
 void ProcessMod() noexcept
 {
+	ResetGlobals();
+
 	if (gAllSourceTexts.empty())
 		gAllSourceTexts = GetAllTranslationEntries() | std::ranges::to<vector>();
 
@@ -772,6 +778,8 @@ void ProcessMod() noexcept
 
 void NoXRef() noexcept
 {
+	ResetGlobals();
+
 	if (gAllSourceTexts.empty())
 		gAllSourceTexts = GetAllTranslationEntries() | std::ranges::to<vector>();
 
@@ -788,6 +796,6 @@ void NoXRef() noexcept
 		if (gSortedSourceTexts.contains(hPath.native()))
 			continue;
 
-		fmt::print("{}\n", hPath.u8string());
+		fmt::print("{}\n", fs::relative(hPath, Path::Lang::Directory).u8string());
 	}
 }
