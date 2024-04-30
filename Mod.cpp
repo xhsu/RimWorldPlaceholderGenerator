@@ -926,7 +926,7 @@ void FileMergingSuggestion(bool bShouldWrite) noexcept
 				continue;
 
 			auto const iKeyMaxLen = std::ranges::max(MissingEntries | std::views::keys, {}, &string_view::length).length();
-			auto const iEnTxtMaxLen = std::ranges::max(MissingEntries | std::views::values, {}, &string_view::length).length() + 2;
+			auto const iEnTxtMaxLen = std::ranges::max(MissingEntries | std::views::values, {}, &string_view::length).length() + (size_t)2;	// #UPDATE_AT_CPP23 ssz literal
 
 			XMLDocument xml;
 			XMLElement* LanguageData = nullptr;
@@ -979,7 +979,7 @@ void FileMergingSuggestion(bool bShouldWrite) noexcept
 				);
 
 				for (auto&& record : records)
-					fmt::print(Style::Info, "{}\n", record);
+					fmt::print(Style::Info, u8"{}\n", record);
 
 				if (bShouldWrite)
 				{

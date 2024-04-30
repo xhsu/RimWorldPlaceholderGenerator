@@ -33,7 +33,7 @@
 
 # Visual Studio
 .vs/*
-*.vcxproj.user
+RimWorldPlaceholderGenerator.vcxproj.user
 
 # C#
 CSharpExecutable/bin/*
