@@ -45,6 +45,9 @@
     <ClCompile Include="HashExtension.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="UtlCommandLine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="tinyxml2\tinyxml2.h">

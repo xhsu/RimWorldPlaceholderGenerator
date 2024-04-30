@@ -89,3 +89,4 @@ inline void CheckStringForXML(std::string* s) noexcept
 
 extern void ProcessMod() noexcept;
 extern void NoXRef() noexcept;
+extern void FileMergingSuggestion(bool bShouldWrite) noexcept;

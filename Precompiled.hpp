@@ -8,6 +8,7 @@
 #include <fmt/color.h>
 #include <fmt/ranges.h>
 #include <fmt/std.h>
+#include <fmt/xchar.h>
 
 #include <cppcoro/recursive_generator.hpp>	// #UPDATE_AT_CPP23 generator
 

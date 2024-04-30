@@ -1,4 +1,4 @@
-#include "Precompiled.hpp"
+﻿#include "Precompiled.hpp"
 #include "Mod.hpp"
 
 import Application;
@@ -776,6 +776,8 @@ void ProcessMod() noexcept
 //	Get all source files
 //	iterate all translation file and see whether they are needed
 
+inline constexpr bool (fs::directory_entry::* mfnIsDir)() const = &fs::directory_entry::is_directory;	// fucking C++ function overloading
+
 void NoXRef() noexcept
 {
 	ResetGlobals();
@@ -788,14 +790,214 @@ void NoXRef() noexcept
 
 	for (auto&& hPath :
 		fs::recursive_directory_iterator(Path::Lang::Directory)
-		| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
+		| std::views::filter(std::not_fn(mfnIsDir))	// is NOT dir.
 		| std::views::transform(&fs::directory_entry::path)
 		| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".xml") == 0; })
+		| std::views::filter([](auto&& path) noexcept { return !gSortedSourceTexts.contains(path.native()); })
 		)
 	{
-		if (gSortedSourceTexts.contains(hPath.native()))
+		fmt::print("{}\n", fs::relative(hPath, Path::Lang::Directory).u8string());
+	}
+}
+
+// File merging mode:
+//	Get all noxref file
+//	Get all untranslated entry
+//	Check uniqueness
+
+[[nodiscard]]
+static auto ExtractExistingTranslationFromFile(fs::path const& file) noexcept
+{
+	XMLDocument xml;
+	xml.LoadFile(file.u8string().c_str());
+
+	vector<translation_t> ExistingTranslations{};
+
+	for (auto LanguageData = xml.FirstChildElement("LanguageData"); LanguageData; LanguageData = LanguageData->NextSiblingElement("LanguageData"))
+	{
+		for (auto i = LanguageData->FirstChildElement(); i; i = i->NextSiblingElement())
+		{
+			if (!i->Name() || !i->GetText())
+				continue;
+
+			ExistingTranslations.emplace_back(file, i->Name(), i->GetText());
+		}
+	}
+
+	return ExistingTranslations;
+}
+
+[[nodiscard]]
+static auto ExtractAllLastTranslation(sorted_loc_view_t const& SortedSourceView = gSortedSourceTexts) noexcept
+{
+	std::deque<translation_t> LastTranslations{};	// using vector will cause the address stored in view being invalidated after few insertions.
+	sorted_loc_view_t SortedLastTranslations{};	// the ownership of this view belongs to 'LastTranslations'
+
+	for (XMLDocument xml; auto&& file : SortedSourceView | std::views::keys)
+	{
+		auto const pf = _wfopen(file.data(), L"rb");
+
+		if (pf == nullptr)
 			continue;
 
-		fmt::print("{}\n", fs::relative(hPath, Path::Lang::Directory).u8string());
+		xml.LoadFile(pf);
+		fclose(pf);
+
+		for (auto LanguageData = xml.FirstChildElement("LanguageData"); LanguageData; LanguageData = LanguageData->NextSiblingElement("LanguageData"))
+		{
+			for (auto i = LanguageData->FirstChildElement(); i; i = i->NextSiblingElement())
+			{
+				if (!i->Name() || !i->GetText())
+					continue;
+
+				auto const& tr = LastTranslations.emplace_back(file, i->Name(), i->GetText());
+				SortedLastTranslations[tr.m_TargetFile.native()].try_emplace(tr.m_Identifier, tr.m_Text);
+			}
+		}
+	}
+
+	return pair{ std::move(LastTranslations), std::move(SortedLastTranslations) };
+}
+
+[[nodiscard]]
+static bool SimiliarFit(wstring_view const& lhs, wstring_view const& rhs) noexcept
+{
+	return _wcsnicmp(
+		lhs.data(), rhs.data(),
+		std::min(lhs.length(), rhs.length())
+	) == 0;
+}
+
+[[nodiscard]]
+static auto GetAllUntranslated(sorted_loc_view_t const& SortedSourceTexts, sorted_loc_view_t const& SortedLastTranslations) noexcept	// the return value is a view built on the first argument.
+{
+	sorted_loc_view_t ret;
+
+	for (auto&& [file, dict] : SortedSourceTexts)
+	{
+		auto it1 = SortedLastTranslations.find(file);
+		if (it1 == SortedLastTranslations.cend())	// no file in last translation => this entire file is missing.
+		{
+			ret.try_emplace(file, dict);	// yes, it's a copy.
+			continue;
+		}
+
+		for (auto&& [id, text] : dict)
+		{
+			if (!it1->second.contains(id))	// no record of such id => the entry is missing.
+				ret[file].try_emplace(id, text);
+		}
+	}
+
+	return ret;
+}
+
+void FileMergingSuggestion(bool bShouldWrite) noexcept
+{
+	ResetGlobals();
+
+	if (gAllSourceTexts.empty())
+		gAllSourceTexts = GetAllTranslationEntries() | std::ranges::to<vector>();
+
+	if (gSortedSourceTexts.empty())
+		gSortedSourceTexts = GetSortedLocView();
+
+	auto const UselessFiles =
+		fs::recursive_directory_iterator(Path::Lang::Directory)
+		| std::views::filter(std::not_fn(mfnIsDir))	// is NOT dir. #UPDATE_AT_CPP26 __cpp_lib_not_fn >= 202306L
+		| std::views::transform(&fs::directory_entry::path)
+		| std::views::filter([](auto&& path) noexcept { return path.has_extension() && _wcsicmp(path.extension().c_str(), L".xml") == 0; })
+		| std::views::filter([](auto&& path) noexcept { return !gSortedSourceTexts.contains(path.native()); })
+		| std::ranges::to<vector>();
+
+	auto const [LastTranslations, SortedLastTranslations] = ExtractAllLastTranslation();
+	auto const Untranslated = GetAllUntranslated(gSortedSourceTexts, SortedLastTranslations);
+
+	for (auto&& NoXRefFile : UselessFiles)
+	{
+		auto const NoXRefEntries = ExtractExistingTranslationFromFile(NoXRefFile);
+		auto const CurFileName = fs::_Parse_filename(NoXRefFile.native());
+		[[maybe_unused]] bool bHandled = false;
+
+		for (auto&& [wcsMissingFile, MissingEntries] : Untranslated)
+		{
+			// Have same filename but in diff dir??
+			if (!SimiliarFit(fs::_Parse_filename(wcsMissingFile), CurFileName))
+				continue;
+
+			auto const iKeyMaxLen = std::ranges::max(MissingEntries | std::views::keys, {}, &string_view::length).length();
+			auto const iEnTxtMaxLen = std::ranges::max(MissingEntries | std::views::values, {}, &string_view::length).length() + 2;
+
+			XMLDocument xml;
+			XMLElement* LanguageData = nullptr;
+
+			if (auto const f = _wfopen(wcsMissingFile.data(), L"rb"); f != nullptr)
+			{
+				xml.LoadFile(f);
+				fclose(f);
+
+				LanguageData = xml.FirstChildElement("LanguageData");
+			}
+			else	// new file
+			{
+				xml.InsertFirstChild(xml.NewDeclaration());
+				xml.SetBOM(true);
+
+				LanguageData = xml.NewElement("LanguageData");
+				xml.InsertEndChild(LanguageData);
+			}
+
+			vector<string> records{};
+
+			// any key we are in need is presenting in the noxref file entries?
+			for (auto&& [missing_id, en_text] : MissingEntries)
+			{
+				auto it = std::ranges::find(NoXRefEntries, missing_id, &translation_t::m_Identifier);
+				if (it == NoXRefEntries.cend())
+					continue;
+
+				if (records.empty())	// first inserted item!
+					LanguageData->InsertNewComment(fmt::format("Merging from file '{}' at {:%Y-%m-%d}", Path::RelativeToLang(wcsMissingFile), ch::system_clock::now()).c_str());
+
+				records.emplace_back(
+					fmt::format(u8R"([{0:<{3}}] (EN){1:>{4}?} => {2:?})", it->m_Identifier, en_text, it->m_Text, iKeyMaxLen, iEnTxtMaxLen)
+				);
+
+				LanguageData
+					->InsertNewChildElement(it->m_Identifier.c_str())
+					->SetText(it->m_Text.c_str());
+
+				bHandled = true;
+			}
+
+			// something actually patched.
+			if (!records.empty())
+			{
+				fmt::print(Style::Info, "\nUnreferenced file {} has the following translations which would fit into {}\n",
+					fmt::styled(Path::RelativeToLang(NoXRefFile), Style::Name),
+					fmt::styled(Path::RelativeToLang(wcsMissingFile), Style::Name)
+				);
+
+				for (auto&& record : records)
+					fmt::print(Style::Info, "{}\n", record);
+
+				if (bShouldWrite)
+				{
+#ifdef _DEBUG
+					xml.SaveFile(
+						fmt::format("{}\\{}{}", fs::path{ fs::_Parse_parent_path(wcsMissingFile) }, fs::path{ fs::_Parse_stem(wcsMissingFile) }, "_RWPHG_DEBUG.xml").c_str()
+					);
+#else
+					if (auto const f = _wfopen(wcsMissingFile.data(), L"w"); f != nullptr)
+					{
+						xml.SaveFile(f);
+						fclose(f);
+					}
+					else
+						fmt::print(Style::Error, "[::FileMergingSuggestion] Unable to save file \"{}\"", fs::path{ wcsMissingFile });
+#endif
+				}
+			}
+		}
 	}
 }

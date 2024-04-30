@@ -128,6 +128,19 @@ static void ClearConsole(span<string_view const>) noexcept
 	system("cls");
 }
 
+static void XmlMerging(span<string_view const> args) noexcept
+{
+	auto& path_to_mod = args[0];
+	auto& target_lang = args[1];
+	bool bShouldWrite = args.size() < 3 || !TextToBoolean(args[2]);
+
+	GetModClasses(path_to_mod.data(), &gModClasses);
+	gAllNamespaces.insert_range(gModClasses | std::views::values | std::views::transform(&class_info_t::m_Namespace));
+
+	Path::Resolve(path_to_mod, target_lang);
+	FileMergingSuggestion(bShouldWrite);
+}
+
 #pragma region Command line stuff
 inline constexpr string_view ARG_DESC_HELP[] = { "-help" };
 inline constexpr string_view ARG_DESC_VERSION[] = { "-version", "[bool:show_extra]", };
@@ -135,6 +148,7 @@ inline constexpr string_view ARG_DESC_CLRDBG[] = { "-clrdbg", "mod_dir", "target
 inline constexpr string_view ARG_DESC_NOXREF[] = { "-noxref", "mod_dir", "target_lang", };
 inline constexpr string_view ARG_DESC_GENPH[] = { "-genph", "mod_dir", "target_lang", };
 inline constexpr string_view ARG_DESC_CLR[] = { "-cls", };
+inline constexpr string_view ARG_DESC_XMLMERG[] = { "-xmlmerg","mod_dir", "target_lang", "[bool:print_only]" };
 
 extern void ShowHelp(span<string_view const>) noexcept;
 
@@ -147,6 +161,7 @@ inline constexpr tuple<span<string_view const>, void(*)(span<string_view const>)
 	{ ARG_DESC_NOXREF, &NoXRef, "Finding all localization files which has no reference from current mod." },
 	{ ARG_DESC_GENPH, &Default, "Generate English-based placeholders for a certain language." },
 	{ ARG_DESC_CLR, &ClearConsole, "Clear the entire console output screen." },
+	{ ARG_DESC_XMLMERG, &XmlMerging, "Merging possible misplaced xmls and their entries." },
 };
 
 void ShowHelp(span<string_view const>) noexcept
@@ -167,7 +182,7 @@ void ShowHelp(span<string_view const>) noexcept
 		fmt::print(Style::Info, "{}", string(max_len - arg_desc[0].length(), ' '));
 
 		for (auto&& arg : arg_desc | std::views::drop(1))
-			fmt::print(arg[0] == '[' ? Style::Skipping : Style::Info, " {}", arg);
+			fmt::print(IsOptionalArgument(arg) ? Style::Skipping : Style::Info, " {}", arg);
 
 		fmt::print(Style::Info, "\n\n");
 	}
