@@ -1,5 +1,7 @@
 module;
 
+#define HYDROGENIUM_APPLICATION_VERMGR_VER 20240505L
+
 #include <stdint.h>
 
 #include <bit>
@@ -66,7 +68,7 @@ struct app_version_t final
 	}
 
 	[[nodiscard]]
-	constexpr uint32_t AsInt32() const noexcept
+	constexpr uint32_t U32() const noexcept
 	{
 		return std::bit_cast<uint32_t>(*this);
 	}
@@ -89,3 +91,5 @@ export inline constexpr app_version_t APP_VERSION
 	.m_revision = 0,
 	.m_build = static_cast<uint8_t>(BUILD_NUMBER % 255),
 };
+
+export inline constexpr uint32_t APP_VERSION_COMPILED = APP_VERSION.U32();

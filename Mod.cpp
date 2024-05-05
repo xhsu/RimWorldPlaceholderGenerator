@@ -652,9 +652,8 @@ static void SaveCRC(
 	Version->SetAttribute("Major", APP_VERSION.m_major);
 	Version->SetAttribute("Minor", APP_VERSION.m_minor);
 	Version->SetAttribute("Revision", APP_VERSION.m_revision);
-	Version->SetAttribute("Build", APP_VERSION.m_build);
-	Version->SetAttribute("Julian", BUILD_NUMBER);
-	Version->SetAttribute("Checksum", APP_VERSION.AsInt32());
+	Version->SetAttribute("Build", BUILD_NUMBER);
+	Version->SetAttribute("Checksum", APP_VERSION_COMPILED);
 
 	auto const Timestamp = xml.NewElement("Timestamp");
 	xml.InsertEndChild(Timestamp);

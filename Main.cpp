@@ -83,7 +83,7 @@ static void ShowVersion(span<string_view const> args) noexcept
 	fmt::println("Compile at: " __DATE__);
 
 	if (!args.empty())
-		fmt::println("\tVersion as uint32: {}", APP_VERSION.AsInt32());
+		fmt::println("\tVersion as uint32: {}", APP_VERSION_COMPILED);
 
 	fmt::println("");
 }
