@@ -678,11 +678,12 @@ static void SaveCRC(
 		Record->SetAttribute("CRC", CRC64::CheckStream((std::byte*)Text.data(), Text.size()));
 	}
 
-	auto const StringFillers = xml.NewElement("StringFillers");
-	xml.InsertEndChild(StringFillers);
-
 	if (pStringFillerFolder)
 	{
+		// Do not leave an empty node in the document.
+		auto const StringFillers = xml.NewElement("StringFillers");
+		xml.InsertEndChild(StringFillers);
+
 		for (auto&& hPath :
 			fs::recursive_directory_iterator(*pStringFillerFolder)
 			| std::views::filter([](auto&& entry) noexcept { return !entry.is_directory(); })
