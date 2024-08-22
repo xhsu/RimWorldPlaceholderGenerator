@@ -10,7 +10,7 @@ namespace CSharpExecutable
 		// Fuck C#, why the alignment has to be constant??
 
 		const int LongestFullName = -63;
-		const int LongestNamespace = -13;
+		const int LongestNamespace = -15;
 		const int LongestName = -54;
 		const int LongestBase = -57;
 
@@ -52,6 +52,8 @@ namespace CSharpExecutable
 
 			using var hpp = new StreamWriter("../../../../RimWorldClasses.hpp");
 
+			hpp.WriteLine($"inline constexpr char RIMWORLD_ASSEMBLY_VERSION[] = \"{RimWolrdVanilla.LastReadVersion}\";");
+			hpp.WriteLine();
 			hpp.WriteLine("inline classinfo_dict_t const gRimWorldClasses");
 			hpp.WriteLine("{");
 
@@ -61,7 +63,19 @@ namespace CSharpExecutable
 				hpp.WriteArray(Info.MustTranslates);
 				hpp.WriteArray(Info.ArraysMustTranslate);
 				hpp.WritePairs(Info.ObjectArrays);
+				hpp.WritePairs(Info.Objects);
 				hpp.WriteLine("}, },");
+			}
+
+			foreach (var (Name, Info) in VanillaClassInfo)
+			{
+				if (Info.Objects.Count > 0)
+				{
+					Console.WriteLine($"'{Name}' has following translatable sub-entry:");
+
+					foreach (var (FieldName, TypeName) in Info.Objects)
+						Console.WriteLine($"\t{FieldName}\t -> \t{TypeName}");
+				}
 			}
 
 			hpp.WriteLine("};");

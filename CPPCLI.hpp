@@ -77,6 +77,7 @@ struct class_info_t final
 	str_set_t m_MustTranslates{};
 	str_set_t m_ArraysMustTranslate{};
 	dictionary_t m_ObjectArrays{};	// key: FieldName, value: FieldType
+	dictionary_t m_Objects{};	// key: FieldName, value: FieldType
 
 	[[nodiscard]]
 	inline std::string FullName() const noexcept

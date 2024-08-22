@@ -261,20 +261,10 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 			}
 			else
 			{
-				if (!FolderOverride)
-				{
-					co_yield{
-						DefInjected / GetClassFolderName(*pClassInfo) / szFileName,
-						std::move(szThisIdentifier), field->GetText(),
-					};
-				}
-				else
-				{
-					co_yield{
-						DefInjected / *FolderOverride / szFileName,
-						std::move(szThisIdentifier), field->GetText(),
-					};
-				}
+				co_yield{
+					DefInjected / FolderOverride.value_or(GetClassFolderName(*pClassInfo)) / szFileName,
+					std::move(szThisIdentifier), field->GetText(),
+				};
 
 			}
 		}
@@ -298,7 +288,7 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 				else
 				{
 					co_yield{
-						DefInjected / GetClassFolderName(*pClassInfo) / szFileName,
+						DefInjected / FolderOverride.value_or(GetClassFolderName(*pClassInfo)) / szFileName,
 						std::format("{}.{}", szThisIdentifier, idx), li->GetText(),
 					};
 				}
@@ -320,9 +310,23 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 					li,
 
 					// The object in List<> must kept in same file as its declarer.
-					optional<string>{ std::in_place, GetClassFolderName(*pClassInfo), }
+					optional<string>{ std::in_place, FolderOverride.value_or(GetClassFolderName(*pClassInfo)), }
 				);
 			}
+		}
+
+		// Case 4: this is an object that contains a translatable field!
+		else if (auto const iter = pClassInfo->m_Objects.find(szFieldName); iter != pClassInfo->m_Objects.cend())
+		{
+			co_yield ExtractAllEntriesFromObject(
+				szThisIdentifier,	// no need for indexing, function will append at its head.
+				iter->second,
+				szFileName,
+				field,	// the field is the entry itself, not further finding.
+
+				// The object in List<> must kept in same file as its declarer.
+				optional<string>{ std::in_place, FolderOverride.value_or(GetClassFolderName(*pClassInfo)), }
+			);
 		}
 
 		// Default: Do nothing. This is not a field that can be translated.

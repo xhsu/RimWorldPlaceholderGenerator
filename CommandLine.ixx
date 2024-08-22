@@ -7,6 +7,7 @@ module;
 #include <ranges>
 #include <span>
 #include <string_view>
+#include <string>
 
 
 export module CommandLine;

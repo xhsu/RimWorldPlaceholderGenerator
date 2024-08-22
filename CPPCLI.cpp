@@ -102,7 +102,7 @@ static std::string cli_to_stl(System::String^ s)
 	return { (char*)pinnedPtr, (std::size_t)bytes->Length, };
 }
 
-static void ParseTypes(array<Type^>^ types, Type^ tTypeofDef, classinfo_dict_t* pret, bool(*pfnFilter)(Type^) = nullptr)
+static void ParseTypes(Assembly^ dll, Type^ tTypeofDef, classinfo_dict_t* pret, bool(*pfnFilter)(Type^) = nullptr)
 {
 	/*
 		var defTypes =
@@ -112,9 +112,11 @@ static void ParseTypes(array<Type^>^ types, Type^ tTypeofDef, classinfo_dict_t* 
 		select ty;
 	*/
 
-	auto candidates = gcnew List<FieldInfo^>;
+	auto all_types = dll->GetTypes();
+	auto potentially_translatable_array_candidates = gcnew List<FieldInfo^>;
+	auto potentially_translatable_object_candidates = gcnew List<FieldInfo^>;
 
-	for each (auto ty in types)
+	for each (auto ty in all_types)
 	{
 		try
 		{
@@ -141,7 +143,8 @@ static void ParseTypes(array<Type^>^ types, Type^ tTypeofDef, classinfo_dict_t* 
 
 			auto& info = iter->second;
 
-			for each (auto field in ty->GetFields())
+			// Prevent RulePack gets filtered. It has private [MustTranslate] fields like RulePack::rulesStrings. Seriously, why?
+			for each (auto field in ty->GetFields(BindingFlags::FlattenHierarchy | BindingFlags::Instance | BindingFlags::Public | BindingFlags::NonPublic))
 			{
 				try
 				{
@@ -167,7 +170,14 @@ static void ParseTypes(array<Type^>^ types, Type^ tTypeofDef, classinfo_dict_t* 
 						&& field->ReflectedType != nullptr)
 					{
 						bHandled = true;
-						candidates->Add(field);
+						potentially_translatable_array_candidates->Add(field);
+					}
+					else if (
+						!bHandled
+						&& dll->GetType(field->FieldType->FullName != nullptr ? field->FieldType->FullName : field->FieldType->Name))
+					{
+						bHandled = true;
+						potentially_translatable_object_candidates->Add(field);
 					}
 				}
 				catch (...) { fmt::println("Members of type '{}' cannot be parse!", cli_to_stl(ty->FullName)); }
@@ -177,29 +187,48 @@ static void ParseTypes(array<Type^>^ types, Type^ tTypeofDef, classinfo_dict_t* 
 			if (info.m_Base == "System.Object")
 				info.m_Base.clear();
 
-			// It's a class without any translation entry.
+			// It's a class without any translation entry. #POTENTIAL_BUG could cause objects with only translatable object be removed.
 			if (info.m_MustTranslates.size() == 0 && info.m_ArraysMustTranslate.size() == 0)
 				pret->erase(iter);
 		}
 		catch (...) { fmt::println("Type '{}' is inaccessible!", cli_to_stl(ty->FullName)); }
 	}
 
-	for each (auto field in candidates)
+	for each (auto field in potentially_translatable_array_candidates)
 	{
 		Type^ ElemType = field->FieldType->GenericTypeArguments[0];
 		Type^ ReflType = field->ReflectedType;
 
-		auto ElemName = cli_to_stl(ElemType->FullName != nullptr ? ElemType->FullName : ElemType->Name);
+		auto TypeName = cli_to_stl(ElemType->FullName != nullptr ? ElemType->FullName : ElemType->Name);
 		auto ReflName = cli_to_stl(ReflType->FullName != nullptr ? ReflType->FullName : ReflType->Name);
 
 		// Make sure both elem and refl are either in the return list or in base game.
-		if ((!pret->contains(ElemName) && !gRimWorldClasses.contains(ElemName))
+		if ((!pret->contains(TypeName) && !gRimWorldClasses.contains(TypeName))
 			|| (!pret->contains(ReflName) && !gRimWorldClasses.contains(ReflName)))
 			continue;
 
 		pret->at(ReflName).m_ObjectArrays.try_emplace(
 			cli_to_stl(field->Name),
-			std::move(ElemName)
+			std::move(TypeName)
+		);
+	}
+
+	for each (auto field in potentially_translatable_object_candidates)
+	{
+		Type^ ElemType = field->FieldType;
+		Type^ ReflType = field->ReflectedType;
+
+		auto TypeName = cli_to_stl(ElemType->FullName != nullptr ? ElemType->FullName : ElemType->Name);
+		auto ReflName = cli_to_stl(ReflType->FullName != nullptr ? ReflType->FullName : ReflType->Name);
+
+		// Make sure both elem and refl are either in the return list or in base game.
+		if ((!pret->contains(TypeName) && !gRimWorldClasses.contains(TypeName))
+			|| (!pret->contains(ReflName) && !gRimWorldClasses.contains(ReflName)))
+			continue;
+
+		pret->at(ReflName).m_Objects.try_emplace(
+			cli_to_stl(field->Name),
+			std::move(TypeName)
 		);
 	}
 }
@@ -208,7 +237,7 @@ static void GetModClasses(Assembly^ dll, Type^ tTypeofDef, classinfo_dict_t* pre
 {
 	try
 	{
-		ParseTypes(dll->GetTypes(), tTypeofDef, pret);
+		ParseTypes(dll, tTypeofDef, pret);
 	}
 	// https://stackoverflow.com/questions/1091853/error-message-unable-to-load-one-or-more-of-the-requested-types-retrieve-the-l
 	catch (ReflectionTypeLoadException^ ex)
@@ -312,6 +341,8 @@ static Assembly^ LoadUnityEngine(String^ eng_dir)
 		if (asmb->GetName()->Name == "Assembly-CSharp")
 			return asmb;
 	}
+
+	//fmt::print(Style::Skipping, "Using cached RimWorld classes' info without reflection. Cached version: {}", RIMWORLD_ASSEMBLY_VERSION);
 
 	return nullptr;
 }

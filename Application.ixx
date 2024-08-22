@@ -12,32 +12,32 @@ module;
 
 export module Application;
 
-constexpr auto LocalBuildNumber() noexcept
+constexpr auto LocalBuildNumber(std::string_view COMPILE_DATE = __DATE__, int32_t bias = 0) noexcept
 {
-#define COMPILE_DATE __DATE__
-
 	constexpr std::string_view mon[12] =
 	{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 	constexpr uint8_t mond[12] =
 	{ 31,    28,    31,    30,    31,    30,    31,    31,    30,    31,    30,    31 };
 
 	// #UPDATE_AT_CPP23 P2647R1
-	constexpr auto today_m = std::string_view{ COMPILE_DATE, 3 };
-	constexpr auto today_d = (COMPILE_DATE[5] - '0') + (COMPILE_DATE[4] != ' ' ? (COMPILE_DATE[4] - '0') : 0) * 10;
-	constexpr auto today_y = (COMPILE_DATE[10] - '0') + (COMPILE_DATE[9] - '0') * 10 + (COMPILE_DATE[8] - '0') * 100 + (COMPILE_DATE[7] - '0') * 1000;
+	const auto today_m = COMPILE_DATE.substr(0, 3);
+	const auto today_d = (COMPILE_DATE[5] - '0') + (COMPILE_DATE[4] != ' ' ? (COMPILE_DATE[4] - '0') : 0) * 10;
+	const auto today_y = (COMPILE_DATE[10] - '0') + (COMPILE_DATE[9] - '0') * 10 + (COMPILE_DATE[8] - '0') * 100 + (COMPILE_DATE[7] - '0') * 1000;
 
-	constexpr auto this_leap = std::chrono::year{ today_y }.is_leap();
+	const auto this_leap = std::chrono::year{ today_y }.is_leap();
 
-	constexpr auto m = std::ranges::find(mon, today_m) - std::ranges::begin(mon) + 1;	// "Jan" at index 0
-	constexpr auto d = std::ranges::fold_left(mond | std::views::take(m - 1), today_d - (this_leap ? 0 : 1), std::plus<>{});
-	constexpr auto y = today_y - 1900;
+	const auto m = std::ranges::find(mon, today_m) - std::ranges::begin(mon) + 1;	// "Jan" at index 0
+	const auto d = std::ranges::fold_left(mond | std::views::take(m - 1), today_d - (this_leap ? 0 : 1), std::plus<>{});
+	const auto y = today_y - 1900;
 
-	auto m_nBuildNumber = d + static_cast<decltype(d)>((y - 1) * 365.25);
-	m_nBuildNumber -= 44277;	// Mar 24 2022
-
-	return m_nBuildNumber;
-
-#undef COMPILE_DATE
+	return
+		d
+		// the rounding down is actually dropping the years before next leap.
+		// hence the averaged 0.25 wont affect the accurate value.
+		// Gregorian additional rule wont take effect in the next 100 years.
+		// Let's adjust the algorithm then.
+		+ static_cast<decltype(d)>((y - 1) * 365.25)
+		- bias;
 }
 
 struct app_version_t final
@@ -68,13 +68,14 @@ struct app_version_t final
 
 static_assert(sizeof(app_version_t) == sizeof(uint32_t));
 
-export inline constexpr auto BUILD_NUMBER = LocalBuildNumber();
+export inline constexpr auto APP_CRATED = LocalBuildNumber("Mar 24 2022");
+export inline constexpr auto BUILD_NUMBER = LocalBuildNumber(__DATE__, APP_CRATED);
 
 export inline constexpr app_version_t APP_VERSION
 {
 	.m_major = 1,
 	.m_minor = 3,
-	.m_revision = 0,
+	.m_revision = 1,
 	.m_build = static_cast<uint8_t>(BUILD_NUMBER % 255),
 };
 

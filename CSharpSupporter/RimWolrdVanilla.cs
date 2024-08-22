@@ -23,10 +23,12 @@ namespace CSharpSupporter
 		public List<string> MustTranslates = [];
 		public List<string> ArraysMustTranslate = [];
 		public List<(string, string)> ObjectArrays = [];
+		public List<(string, string)> Objects = [];
 	}
 
 	public static class RimWolrdVanilla
 	{
+		public static string LastReadVersion = "Unset";
 		public const string ASSEMBLY_ABS_PATH = "D:\\SteamLibrary\\steamapps\\common\\RimWorld\\RimWorldWin64_Data\\Managed\\Assembly-CSharp.dll";
 
 		public static IEnumerable<ClassInfo> FindWithoutNamespaces(this SortedDictionary<string, ClassInfo> self, string className)
@@ -50,11 +52,13 @@ namespace CSharpSupporter
 			var rimWorldAsm = mlc.LoadFromAssemblyPath(ASSEMBLY_ABS_PATH);
 			var tVerseDef = rimWorldAsm.GetType("Verse.Def");
 			var tEditable = rimWorldAsm.GetType("Verse.Editable");
+			LastReadVersion = rimWorldAsm.GetName().Version?.ToString() ?? "Unknown";
 
 			SortedDictionary<string, ClassInfo> classes = [];
 			classes[tEditable!.FullName!] = new ClassInfo(tEditable);
 
 			var ArrayOfObjects = new List<FieldInfo>();
+			var PotentiallyTranslatableObject = new List<FieldInfo>();
 
 			foreach (var ty in rimWorldAsm.GetTypes().Where(t => !t.IsGenericType))
 			{
@@ -62,7 +66,8 @@ namespace CSharpSupporter
 				{
 					var info = new ClassInfo(ty);
 
-					foreach (var field in ty.GetFields())   // Inherited fields will be included.
+					// Inherited fields will be included.
+					foreach (var field in ty.GetFields(BindingFlags.FlattenHierarchy | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
 					{
 						try
 						{
@@ -78,6 +83,10 @@ namespace CSharpSupporter
 								&& field.ReflectedType != null)
 							{
 								ArrayOfObjects.Add(field);
+							}
+							else if (rimWorldAsm.GetType(field.FieldType.FullName ?? field.FieldType.Name) != null)
+							{
+								PotentiallyTranslatableObject.Add(field);
 							}
 						}
 						catch { }
@@ -95,6 +104,14 @@ namespace CSharpSupporter
 			{
 				classes[field.ReflectedType!.FullName ?? field.ReflectedType!.Name].ObjectArrays
 					.Add((field.Name, field.FieldType.GenericTypeArguments.First().FullName ?? field.FieldType.GenericTypeArguments.First().Name));
+			}
+
+			foreach (var field in PotentiallyTranslatableObject
+				.Where(f => classes.ContainsKey(f.FieldType.FullName ?? f.FieldType.Name))
+				.Where(f => classes.ContainsKey(f.ReflectedType!.FullName ?? f.ReflectedType!.Name)))
+			{
+				classes[field.ReflectedType!.FullName ?? field.ReflectedType!.Name].Objects
+					.Add((field.Name, field.FieldType.FullName ?? field.FieldType.Name));
 			}
 
 			return classes;
