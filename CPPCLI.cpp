@@ -40,7 +40,8 @@ namespace fs = std::filesystem;
 inline constexpr wchar_t ENGINE_REL_PATH[] = L"../../../RimWorldWin64_Data/Managed/";
 inline constexpr wchar_t WORKSHOP_REL_PATH[] = L"../../../../../workshop/content/294100/";
 inline constexpr wchar_t HARMONY[] = L"2009463077/1.4/Assemblies/0Harmony.dll";
-inline constexpr wchar_t HUGSLIB[] = L"818773962/v1.4/Assemblies/HugsLib.dll";
+inline constexpr wchar_t HARMONY_MOD[] = L"2009463077/1.4/Assemblies/HarmonyMod.dll";
+inline constexpr wchar_t HUGSLIB[] = L"818773962/v1.5/Assemblies/HugsLib.dll";
 
 ref class cliglb
 {
@@ -358,8 +359,9 @@ void GetModClasses(const char* path_to_mod, classinfo_dict_t* pret)
 	auto RimWorld = LoadUnityEngine(cliglb::EnginePath);
 	auto tTypeofDef = RimWorld->GetType("Verse.Def");
 
-	LoadAssembly(Path::Combine(cliglb::WorkshopPath, gcnew String(HUGSLIB)), true);
 	LoadAssembly(Path::Combine(cliglb::WorkshopPath, gcnew String(HARMONY)), true);
+	LoadAssembly(Path::Combine(cliglb::WorkshopPath, gcnew String(HARMONY_MOD)), true);
+	LoadAssembly(Path::Combine(cliglb::WorkshopPath, gcnew String(HUGSLIB)), true);
 
 	// classinfo_dict_t ret{};
 	auto assemblies = LoadAllAssemblyFromDir(cliglb::ModPath);	// perhaps all modules rather than stuff in "Assemblies/"?
