@@ -14,6 +14,7 @@ namespace ch = std::chrono;
 
 using std::array;
 using std::function;
+using std::generator;
 using std::optional;
 using std::pair;
 using std::span;
@@ -21,9 +22,6 @@ using std::string;
 using std::string_view;
 using std::vector;
 using std::wstring_view;
-
-using cppcoro::generator;
-using cppcoro::recursive_generator;
 
 enum struct EDecision
 {
@@ -234,13 +232,23 @@ static generator<fs::path> GetAllXmlSourceFiles(fs::path const& hModFolder = Pat
 }
 
 [[nodiscard]]
-static recursive_generator<translation_t> ExtractAllEntriesFromObject(
+static generator<translation_t> ExtractAllEntriesFromObject(
 	string szPrevIdentifier, string_view szTypeName, wstring_view szFileName, XMLElement* def,
 	optional<string>&& FolderOverride = std::nullopt/* for list elems as they are meant to place in same folder as their declarer */,
 	fs::path const& DefInjected = Path::Lang::DefInjected
 ) noexcept
 {
 	auto const pClassInfo = SearchClassName(szTypeName);
+
+	if (!pClassInfo)
+	{
+		fmt::print(
+			Style::Warning,
+			"Unknown class type '{}' encountered while processing '{}'. Skipping.\n",
+			szTypeName, szPrevIdentifier
+		);
+		co_return;
+	}
 
 	for (auto field = def->FirstChildElement(); field; field = field->NextSiblingElement())
 	{
@@ -303,7 +311,7 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 			for (auto li = field->FirstChildElement("li"); li; li = li->NextSiblingElement("li"), ++idx)
 			{
 				// Everything wrapped in <li/> would be considered as one individual object.
-				co_yield ExtractAllEntriesFromObject(
+				co_yield std::ranges::elements_of(ExtractAllEntriesFromObject(
 					std::format("{}.{}", szThisIdentifier, idx),
 					iter->second,
 					szFileName,
@@ -311,14 +319,14 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 
 					// The object in List<> must kept in same file as its declarer.
 					optional<string>{ std::in_place, FolderOverride.value_or(GetClassFolderName(*pClassInfo)), }
-				);
+				));
 			}
 		}
 
 		// Case 4: this is an object that contains a translatable field!
 		else if (auto const iter = pClassInfo->m_Objects.find(szFieldName); iter != pClassInfo->m_Objects.cend())
 		{
-			co_yield ExtractAllEntriesFromObject(
+			co_yield std::ranges::elements_of(ExtractAllEntriesFromObject(
 				szThisIdentifier,	// no need for indexing, function will append at its head.
 				iter->second,
 				szFileName,
@@ -326,7 +334,7 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 
 				// The object in List<> must kept in same file as its declarer.
 				optional<string>{ std::in_place, FolderOverride.value_or(GetClassFolderName(*pClassInfo)), }
-			);
+			));
 		}
 
 		// Default: Do nothing. This is not a field that can be translated.
@@ -334,7 +342,7 @@ static recursive_generator<translation_t> ExtractAllEntriesFromObject(
 }
 
 [[nodiscard]]
-static recursive_generator<translation_t> ExtractAllEntriesFromFile(fs::path const& file, fs::path const& Keyed = Path::Lang::Keyed) noexcept
+static generator<translation_t> ExtractAllEntriesFromFile(fs::path const& file, fs::path const& Keyed = Path::Lang::Keyed) noexcept
 {
 	XMLDocument xml;
 	xml.LoadFile(file.u8string().c_str());
@@ -347,7 +355,7 @@ static recursive_generator<translation_t> ExtractAllEntriesFromFile(fs::path con
 		for (auto def = defs->FirstChildElement(); def; def = def->NextSiblingElement())
 		{
 			if (auto defName = def->FirstChildElement("defName"); defName)
-				co_yield ExtractAllEntriesFromObject(defName->GetText(), def->Name(), szFileName, def);
+				co_yield std::ranges::elements_of(ExtractAllEntriesFromObject(defName->GetText(), def->Name(), szFileName, def));
 		}
 	}
 
@@ -371,10 +379,10 @@ static recursive_generator<translation_t> ExtractAllEntriesFromFile(fs::path con
 }
 
 [[nodiscard]]
-static recursive_generator<translation_t> GetAllTranslationEntries() noexcept
+static generator<translation_t> GetAllTranslationEntries() noexcept
 {
 	for (auto&& file : GetAllXmlSourceFiles())
-		co_yield ExtractAllEntriesFromFile(file);
+		co_yield std::ranges::elements_of(ExtractAllEntriesFromFile(file));
 }
 
 [[nodiscard]]

@@ -10,6 +10,4 @@
 #include <fmt/std.h>
 #include <fmt/xchar.h>
 
-#include <cppcoro/recursive_generator.hpp>	// #UPDATE_AT_CPP23 generator
-
 #include "tinyxml2/tinyxml2.h"

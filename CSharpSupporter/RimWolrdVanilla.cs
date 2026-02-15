@@ -29,7 +29,7 @@ namespace CSharpSupporter
 	public static class RimWolrdVanilla
 	{
 		public static string LastReadVersion = "Unset";
-		public const string ASSEMBLY_ABS_PATH = "D:\\SteamLibrary\\steamapps\\common\\RimWorld\\RimWorldWin64_Data\\Managed\\Assembly-CSharp.dll";
+		public const string ASSEMBLY_ABS_PATH = "G:\\SteamLibrary\\steamapps\\common\\RimWorld\\RimWorldWin64_Data\\Managed\\Assembly-CSharp.dll";
 
 		public static IEnumerable<ClassInfo> FindWithoutNamespaces(this SortedDictionary<string, ClassInfo> self, string className)
 		{

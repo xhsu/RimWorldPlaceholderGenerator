@@ -39,9 +39,9 @@ namespace fs = std::filesystem;
 
 inline constexpr wchar_t ENGINE_REL_PATH[] = L"../../../RimWorldWin64_Data/Managed/";
 inline constexpr wchar_t WORKSHOP_REL_PATH[] = L"../../../../../workshop/content/294100/";
-inline constexpr wchar_t HARMONY[] = L"2009463077/1.4/Assemblies/0Harmony.dll";
-inline constexpr wchar_t HARMONY_MOD[] = L"2009463077/1.4/Assemblies/HarmonyMod.dll";
-inline constexpr wchar_t HUGSLIB[] = L"818773962/v1.5/Assemblies/HugsLib.dll";
+inline constexpr wchar_t HARMONY[] = L"2009463077/1.5/Assemblies/0Harmony.dll";
+inline constexpr wchar_t HARMONY_MOD[] = L"2009463077/1.5/Assemblies/HarmonyMod.dll";
+inline constexpr wchar_t HUGSLIB[] = L"818773962/v1.6/Assemblies/HugsLib.dll";
 
 ref class cliglb
 {
@@ -81,9 +81,9 @@ public:
 		}
 
 #ifdef _DEBUG
-		ModsPath = Path::GetFullPath("D:\\SteamLibrary\\steamapps\\common\\RimWorld\\Mods");
-		EnginePath = Path::GetFullPath("D:\\SteamLibrary\\steamapps\\common\\RimWorld\\RimWorldWin64_Data\\Managed\\");
-		WorkshopPath = Path::GetFullPath("D:\\SteamLibrary\\steamapps\\workshop\\content\\294100\\");
+		ModsPath = Path::GetFullPath("G:\\SteamLibrary\\steamapps\\common\\RimWorld\\Mods");
+		EnginePath = Path::GetFullPath("G:\\SteamLibrary\\steamapps\\common\\RimWorld\\RimWorldWin64_Data\\Managed\\");
+		WorkshopPath = Path::GetFullPath("G:\\SteamLibrary\\steamapps\\workshop\\content\\294100\\");
 
 		if (Directory::Exists(ModsPath) && Directory::Exists(EnginePath) && Directory::Exists(WorkshopPath))
 		{
